@@ -32,6 +32,16 @@ import {
   ReferralBonusRecord,
   LiveAssistanceActivity
 } from './types';
+import {
+  fetchInvestorsFromDb,
+  fetchOrdersFromDb,
+  fetchAdminControlsFromDb,
+  saveInvestorToDb,
+  deleteInvestorFromDb,
+  saveOrderToDb,
+  saveAdminControlsToDb,
+  saveInquiryToDb
+} from './services/supabaseService';
 
 export default function App() {
   const [activePage, setActivePage] = useState<'home' | 'about' | 'vision' | 'contact' | 'dashboard' | 'admin'>('home');
@@ -98,6 +108,39 @@ export default function App() {
     }, 22000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Supabase Initial Hydration
+  useEffect(() => {
+    async function loadDataFromSupabase() {
+      try {
+        const [dbInvestors, dbOrders, dbControls] = await Promise.all([
+          fetchInvestorsFromDb(),
+          fetchOrdersFromDb(),
+          fetchAdminControlsFromDb(),
+        ]);
+
+        if (dbInvestors && dbInvestors.length > 0) {
+          setInvestors(dbInvestors);
+          setCurrentInvestor((prev) => {
+            const found = dbInvestors.find((inv) => inv.id === prev.id);
+            return found || dbInvestors[0];
+          });
+        }
+
+        if (dbOrders && dbOrders.length > 0) {
+          setAssistanceOrders(dbOrders);
+        }
+
+        if (dbControls) {
+          setAdminControls(dbControls);
+        }
+      } catch (err) {
+        console.warn('Supabase initial fetch notice:', err);
+      }
+    }
+
+    loadDataFromSupabase();
   }, []);
 
   // Auth & Modal States
@@ -186,6 +229,7 @@ export default function App() {
 
     setCurrentInvestor(newInvestor);
     setAssistanceHistory((prev) => [newHistoryItem, ...prev]);
+    saveInvestorToDb(newInvestor);
     setActivePage('dashboard');
   };
 
@@ -208,6 +252,7 @@ export default function App() {
   const handleDeleteInvestor = (investorId: string) => {
     // Permanently remove user account
     setInvestors((prev) => prev.filter((inv) => inv.id !== investorId));
+    deleteInvestorFromDb(investorId);
 
     // Permanently delete all related assistance orders
     setAssistanceOrders((prev) =>
@@ -439,6 +484,7 @@ export default function App() {
     };
 
     setAssistanceOrders((prev) => [newOrder, ...prev]);
+    saveOrderToDb(newOrder);
 
     // Prepend to Live Movable Assistance Feed
     const newLiveGet: LiveAssistanceActivity = {
@@ -456,11 +502,15 @@ export default function App() {
   };
 
   const handleUpdateAdminControls = (controls: Partial<AdminControls>) => {
-    setAdminControls((prev) => ({
-      ...prev,
-      ...controls,
-      lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }));
+    setAdminControls((prev) => {
+      const updated = {
+        ...prev,
+        ...controls,
+        lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      saveAdminControlsToDb(updated);
+      return updated;
+    });
   };
 
   const handleToggleUserDividendPause = (investorId: string) => {
@@ -536,6 +586,7 @@ export default function App() {
       resolved: false,
     };
     setContactInquiries((prev) => [newInquiry, ...prev]);
+    saveInquiryToDb(newInquiry);
   };
 
   const handleMarkInquiryRead = (id: string, read: boolean) => {
