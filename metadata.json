@@ -1,0 +1,6 @@
+{
+  "name": "Farm Base Club - Agricultural Assistance Platform",
+  "description": "Professional agricultural sponsorship and assistance platform connecting investors with farmers to boost production, featuring peer assistance matching and dividend tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
