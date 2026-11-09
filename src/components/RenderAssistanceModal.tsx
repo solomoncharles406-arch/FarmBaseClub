@@ -140,7 +140,7 @@ export const RenderAssistanceModal: React.FC<RenderAssistanceModalProps> = ({
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="p-3.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300 space-y-1">
-                <p className="font-semibold text-emerald-400">Definition: "Render Assistance"</p>
+                <p className="font-semibold text-emerald-400">Definition: Render Assistance</p>
                 <p>
                   In Farm Base Club, <strong className="text-white">Render Assistance</strong> is the terminology used when offering to financially sponsor a farming cooperative or pay a peer investor scheduled for payout. Your commitment yields up to 20% dividend in a disciplined 20 day cycle.
                 </p>
@@ -207,7 +207,7 @@ export const RenderAssistanceModal: React.FC<RenderAssistanceModalProps> = ({
               <div className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-400 flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                 <span>
-                  Once submitted, the central Admin Desk matches your pledge with a recipient demanding assistance ("Get Assistance"). You will then transfer funds directly to their bank account.
+                  Once submitted, the central Admin Desk matches your pledge with a recipient demanding assistance (Get Assistance). You will then transfer funds directly to their bank account.
                 </span>
               </div>
 

@@ -39,7 +39,7 @@ export const LiveAssistanceTicker: React.FC<LiveAssistanceTickerProps> = ({
 }) => {
   const [filter, setFilter] = useState<'ALL' | 'RENDERED' | 'GOT'>('ALL');
   const [isPlaying, setIsPlaying] = useState(true);
-  const [speed, setSpeed] = useState<'normal' | 'fast' | 'slow'>('normal');
+  const [speed, setSpeed] = useState<'normal' | 'fast' | 'slow'>('slow');
   const [selectedActivity, setSelectedActivity] = useState<LiveAssistanceActivity | null>(null);
 
   // Manual drag to scroll state
@@ -58,9 +58,9 @@ export const LiveAssistanceTicker: React.FC<LiveAssistanceTickerProps> = ({
   const renderedCount = activities.filter((a) => a.type === 'RENDERED').length;
   const gotCount = activities.filter((a) => a.type === 'GOT').length;
 
-  // Duplicate list to guarantee seamless, uninterrupted infinite loop
+  // Duplicate list twice to guarantee seamless, uninterrupted infinite loop at 50% keyframe
   const displayItems = filteredActivities.length > 0
-    ? [...filteredActivities, ...filteredActivities, ...filteredActivities]
+    ? [...filteredActivities, ...filteredActivities]
     : [];
 
   const handleManualScroll = (direction: 'left' | 'right') => {
@@ -90,6 +90,25 @@ export const LiveAssistanceTicker: React.FC<LiveAssistanceTickerProps> = ({
     setIsDragging(false);
   };
 
+  // Touch event handlers for tablets & mobile phones
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!scrollContainerRef.current) return;
+    setIsDragging(true);
+    setStartX(e.touches[0].pageX - scrollContainerRef.current.offsetLeft);
+    setScrollLeftState(scrollContainerRef.current.scrollLeft);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || !scrollContainerRef.current) return;
+    const x = e.touches[0].pageX - scrollContainerRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    scrollContainerRef.current.scrollLeft = scrollLeftState - walk;
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
   const speedClass = speed === 'fast' ? 'speed-fast' : speed === 'slow' ? 'speed-slow' : 'speed-normal';
 
   return (
@@ -101,7 +120,7 @@ export const LiveAssistanceTicker: React.FC<LiveAssistanceTickerProps> = ({
       }`}
     >
       {/* Top Bar: Live Activity Beacon, Filters & Movement Controls */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-col md:flex-row items-center justify-between gap-3 border-b border-neutral-850 text-xs">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row flex-wrap lg:flex-nowrap items-center justify-between gap-2.5 border-b border-neutral-850 text-xs">
         
         {/* Left: Live Pulse Tag */}
         <div className="flex items-center gap-2.5 shrink-0">
@@ -173,18 +192,34 @@ export const LiveAssistanceTicker: React.FC<LiveAssistanceTickerProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             {/* Speed Selector */}
             <div className="hidden sm:flex items-center gap-1 bg-black p-0.5 rounded-lg border border-neutral-800 text-[10px]">
-              {(['slow', 'normal', 'fast'] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setSpeed(s)}
-                  className={`px-2 py-0.5 rounded capitalize font-medium transition cursor-pointer ${
-                    speed === s ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => setSpeed('slow')}
+                className={`px-2 py-0.5 rounded font-medium transition cursor-pointer ${
+                  speed === 'slow' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+                }`}
+                title="Barest minimum slow glide"
+              >
+                Minimum
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpeed('normal')}
+                className={`px-2 py-0.5 rounded font-medium transition cursor-pointer ${
+                  speed === 'normal' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpeed('fast')}
+                className={`px-2 py-0.5 rounded font-medium transition cursor-pointer ${
+                  speed === 'fast' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Fast
+              </button>
             </div>
 
             {/* Play/Pause Button */}
@@ -232,6 +267,9 @@ export const LiveAssistanceTicker: React.FC<LiveAssistanceTickerProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         className={`relative w-full py-3.5 px-4 overflow-x-auto no-scrollbar cursor-grab active:cursor-grabbing select-none ${
           isDragging ? 'cursor-grabbing' : ''
         }`}

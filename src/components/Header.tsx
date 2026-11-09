@@ -1,16 +1,18 @@
 import React from 'react';
 import { Logo } from './Logo';
-import { Shield, Sparkles, User, LogIn, Menu, X } from 'lucide-react';
+import { Sparkles, User, LogIn, LogOut, Menu, X } from 'lucide-react';
 import { Investor } from '../types';
 
 interface HeaderProps {
   activePage: 'home' | 'about' | 'vision' | 'contact' | 'dashboard' | 'admin';
   setActivePage: (page: 'home' | 'about' | 'vision' | 'contact' | 'dashboard' | 'admin') => void;
   onOpenLogin: () => void;
-  onOpenAdminLogin: () => void;
+  onOpenAdminLogin?: () => void;
   onOpenRegister: () => void;
   onOpenPromptFormula: () => void;
   isAdminLoggedIn: boolean;
+  isMemberLoggedIn: boolean;
+  onMemberLogout?: () => void;
   currentInvestor: Investor;
   systemNotice?: string;
 }
@@ -23,6 +25,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenRegister,
   onOpenPromptFormula,
   isAdminLoggedIn,
+  isMemberLoggedIn,
+  onMemberLogout,
   currentInvestor,
   systemNotice,
 }) => {
@@ -45,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="truncate max-w-4xl font-medium">{systemNotice}</span>
         </div>
       )}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 h-18 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
         
         {/* Zone 1: Brand Wordmark & 3D Logo */}
         <div
@@ -75,65 +79,64 @@ export const Header: React.FC<HeaderProps> = ({
           ))}
         </nav>
 
-        {/* Zone 3: Actions - Admin Icon Button + Register / Member Profile Button */}
-        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-          
-          {/* The ADMIN DASHBOARD Icon Button */}
-          <button
-            onClick={onOpenAdminLogin}
-            title={isAdminLoggedIn ? 'Open Admin Control Room' : 'Access Admin Dashboard (Password Protected)'}
-            className={`relative p-2.5 rounded-xl border transition shadow-md flex items-center justify-center ${
-              isAdminLoggedIn || activePage === 'admin'
-                ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-950/50'
-                : 'bg-neutral-900 hover:bg-neutral-800 border-neutral-800 text-neutral-300 hover:text-white hover:border-emerald-500'
-            }`}
-            aria-label="Admin Dashboard Access Icon"
-          >
-            <Shield className="w-5 h-5 text-current" />
-            <span className="sr-only">Admin Dashboard</span>
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-black" />
-          </button>
+        {/* Zone 3: Actions - Member Login & Register / Member Profile Button */}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          {/* Member Login / Profile & Logout */}
+          {!isMemberLoggedIn ? (
+            <>
+              <button
+                type="button"
+                onClick={onOpenLogin}
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 text-[11px] sm:text-sm font-bold rounded-lg sm:rounded-xl transition cursor-pointer whitespace-nowrap shrink-0 text-neutral-200 hover:text-white bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-750 hover:border-emerald-500 shadow-sm"
+                title="Member Portal Login (Username & Password Required)"
+              >
+                <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+                <span>Login</span>
+              </button>
 
-          {/* Member Login Button */}
-          <button
-            type="button"
-            onClick={onOpenLogin}
-            className={`flex items-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl transition cursor-pointer whitespace-nowrap shrink-0 ${
-              activePage === 'dashboard'
-                ? 'bg-neutral-800 text-emerald-400 border border-emerald-500/60 shadow-md'
-                : 'text-neutral-200 hover:text-white bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-750 hover:border-emerald-500 shadow-sm'
-            }`}
-            title="Member Login & Dashboard Access"
-          >
-            <LogIn className="w-4 h-4 text-emerald-400" />
-            <span>Login</span>
-          </button>
-
-          {/* Register Action Button */}
-          {activePage !== 'dashboard' ? (
-            <button
-              onClick={onOpenRegister}
-              className="flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-lg shadow-emerald-950/60 whitespace-nowrap shrink-0"
-            >
-              <span>Register</span>
-            </button>
+              <button
+                onClick={onOpenRegister}
+                className="flex items-center justify-center px-2.5 sm:px-4 py-1.5 sm:py-2.5 text-[11px] sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg sm:rounded-xl transition shadow-lg shadow-emerald-950/60 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <span>Register</span>
+              </button>
+            </>
           ) : (
-            <button
-              onClick={onOpenRegister}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-xl transition"
-            >
-              <User className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="truncate max-w-[120px]">{currentInvestor.fullName.split(' ')[0]}</span>
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => setActivePage('dashboard')}
+                className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold rounded-lg sm:rounded-xl transition cursor-pointer ${
+                  activePage === 'dashboard'
+                    ? 'bg-neutral-800 text-emerald-400 border border-emerald-500/60 shadow-md'
+                    : 'text-neutral-200 hover:text-white bg-neutral-900 hover:bg-neutral-800 border border-neutral-700'
+                }`}
+                title="Open Member Dashboard"
+              >
+                <User className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="truncate max-w-[80px] sm:max-w-[120px]">{currentInvestor.fullName.split(' ')[0] || 'Dashboard'}</span>
+              </button>
+
+              {onMemberLogout && (
+                <button
+                  type="button"
+                  onClick={onMemberLogout}
+                  className="p-1.5 sm:p-2 text-neutral-400 hover:text-red-400 hover:bg-neutral-900 border border-neutral-800 hover:border-red-500/50 rounded-lg sm:rounded-xl transition cursor-pointer"
+                  title="Log out of Member Account"
+                >
+                  <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+              )}
+            </div>
           )}
 
           {/* Mobile hamburger */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 text-neutral-400 hover:text-white"
+            className="lg:hidden p-1 sm:p-2 text-neutral-400 hover:text-white"
             aria-label="Toggle Navigation Menu"
           >
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {mobileMenuOpen ? <X className="w-5 h-5 sm:w-6 sm:h-6" /> : <Menu className="w-5 h-5 sm:w-6 sm:h-6" />}
           </button>
         </div>
 
@@ -160,42 +163,57 @@ export const Header: React.FC<HeaderProps> = ({
           ))}
           <button
             onClick={() => {
-              setActivePage('dashboard');
+              if (isMemberLoggedIn) {
+                setActivePage('dashboard');
+              } else {
+                onOpenLogin();
+              }
               setMobileMenuOpen(false);
             }}
             className="w-full text-left py-2 px-3 rounded-lg text-sm font-semibold text-emerald-400 hover:bg-neutral-900"
           >
-            Investor Dashboard
+            {isMemberLoggedIn ? 'Member Dashboard' : 'Member Dashboard (Login Required)'}
           </button>
-          <div className="pt-2 border-t border-neutral-800 flex gap-2">
-            <button
-              onClick={() => {
-                onOpenLogin();
-                setMobileMenuOpen(false);
-              }}
-              className="flex-1 py-2 text-xs font-bold bg-neutral-900 border border-neutral-750 hover:border-emerald-500 text-emerald-400 rounded-lg text-center flex items-center justify-center gap-1.5"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Login</span>
-            </button>
-            <button
-              onClick={() => {
-                onOpenRegister();
-                setMobileMenuOpen(false);
-              }}
-              className="flex-1 py-2 text-xs font-bold bg-emerald-600 text-white rounded-lg text-center"
-            >
-              Register
-            </button>
-            <button
-              onClick={() => {
-                onOpenAdminLogin();
-                setMobileMenuOpen(false);
-              }}
-              className="flex-1 py-2 text-xs font-semibold bg-neutral-900 border border-neutral-800 text-neutral-200 rounded-lg text-center hover:border-emerald-500"
-            >
-              Admin Access
-            </button>
+          <div className="pt-2 border-t border-neutral-800 grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {!isMemberLoggedIn ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenLogin();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="py-2.5 px-3 text-xs font-bold bg-neutral-900 border border-neutral-750 hover:border-emerald-500 text-emerald-400 rounded-xl text-center flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Login</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenRegister();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="py-2.5 px-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-center cursor-pointer shadow-sm"
+                >
+                  Register
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMemberLogout?.();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="col-span-2 py-2.5 px-3 text-xs font-bold bg-neutral-900 border border-red-900/50 hover:bg-red-950 text-red-300 rounded-xl text-center flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <LogOut className="w-4 h-4 text-red-400" />
+                  <span>Log Out ({currentInvestor.fullName.split(' ')[0]})</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

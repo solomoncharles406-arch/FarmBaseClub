@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, KeyRound, AlertCircle, Eye, EyeOff, X } from 'lucide-react';
+import { ShieldCheck, Lock, KeyRound, AlertCircle, Eye, EyeOff, X, User } from 'lucide-react';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -7,19 +7,33 @@ interface AdminLoginModalProps {
   onSuccess: () => void;
 }
 
-export const ADMIN_PASSWORD = 'BaseClube2026';
+export const ADMIN_USERNAME = 'FarmbaseC11';
+export const ADMIN_PASSWORD = 'FarmB2026#@$%';
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClose, onSuccess }) => {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   if (!isOpen) return null;
 
+  const handleClose = () => {
+    setUsername('');
+    setPassword('');
+    setError(false);
+    onClose();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
+    const cleanUser = username.trim();
+    const isUserValid = cleanUser === ADMIN_USERNAME || cleanUser.toLowerCase() === ADMIN_USERNAME.toLowerCase();
+    const isPassValid = password === ADMIN_PASSWORD;
+
+    if (isUserValid && isPassValid) {
       setError(false);
+      setUsername('');
       setPassword('');
       onSuccess();
     } else {
@@ -47,27 +61,50 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+            onClick={handleClose}
+            className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="text-center space-y-1">
             <div className="mx-auto w-12 h-12 rounded-full bg-emerald-950/60 border border-emerald-600/60 flex items-center justify-center text-emerald-400 mb-2">
               <Lock className="w-6 h-6" />
             </div>
-            <p className="text-sm text-neutral-300">
-              Enter the authorized administrative access key to manage dividends, withdrawals, and user assist matching.
+            <p className="text-xs sm:text-sm text-neutral-300">
+              Enter authorized administrative credentials to access management controls.
             </p>
           </div>
 
+          {/* Username Field */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
-              <KeyRound className="w-3.5 h-3.5 text-red-500" /> Administrative Password
+              <User className="w-3.5 h-3.5 text-emerald-500" /> Administrative Username
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                if (error) setError(false);
+              }}
+              placeholder="Enter admin username..."
+              className={`w-full px-4 py-3 bg-black border ${
+                error ? 'border-red-500 ring-1 ring-red-500' : 'border-neutral-800 focus:border-emerald-500'
+              } rounded-xl text-white placeholder-neutral-500 text-sm focus:outline-none transition font-mono`}
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+
+          {/* Password Field */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-emerald-500" /> Administrative Password
             </label>
             <div className="relative">
               <input
@@ -79,14 +116,14 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
                 }}
                 placeholder="Enter admin password..."
                 className={`w-full px-4 py-3 pr-11 bg-black border ${
-                  error ? 'border-red-500 ring-1 ring-red-500' : 'border-neutral-800 focus:border-red-500'
+                  error ? 'border-red-500 ring-1 ring-red-500' : 'border-neutral-800 focus:border-emerald-500'
                 } rounded-xl text-white placeholder-neutral-500 text-sm focus:outline-none transition font-mono`}
-                autoFocus
+                autoComplete="off"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition cursor-pointer"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -95,37 +132,22 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
             {error && (
               <p className="text-xs text-red-400 flex items-center gap-1.5 pt-1 animate-in fade-in">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                Invalid password. Access denied.
+                Invalid administrative credentials. Access denied.
               </p>
             )}
           </div>
 
-          {/* Quick preset hint */}
-          <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-400 flex items-center justify-between">
-            <span>Required Key:</span>
+          <div className="flex gap-3 pt-3">
             <button
               type="button"
-              onClick={() => {
-                setPassword(ADMIN_PASSWORD);
-                setError(false);
-              }}
-              className="text-emerald-400 font-mono font-medium hover:underline hover:text-emerald-300"
-            >
-              Fill "{ADMIN_PASSWORD}"
-            </button>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 text-sm font-medium text-neutral-300 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl transition"
+              onClick={handleClose}
+              className="flex-1 py-2.5 text-sm font-medium text-neutral-300 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl transition cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-lg shadow-emerald-950/50"
+              className="flex-1 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-lg shadow-emerald-950/50 cursor-pointer"
             >
               Access Dashboard
             </button>

@@ -14,11 +14,16 @@ export const mapDbToInvestor = (row: any): Investor => ({
   fullName: row.full_name,
   email: row.email,
   phone: row.phone,
+  password:
+    row.password ||
+    (row.routing_or_swift?.startsWith('pwd:') ? row.routing_or_swift.slice(4) : undefined) ||
+    row.direct_message?._pwd ||
+    undefined,
   bankDetails: {
     bankName: row.bank_name,
     accountNumber: row.account_number,
     accountName: row.account_name,
-    routingOrSwift: row.routing_or_swift || undefined,
+    routingOrSwift: row.routing_or_swift?.startsWith('pwd:') ? undefined : (row.routing_or_swift || undefined),
   },
   referralCode: row.referral_code,
   referredByCode: row.referred_by_code || undefined,
@@ -130,6 +135,14 @@ export async function fetchAdminControlsFromDb(): Promise<AdminControls | null> 
 export async function saveInvestorToDb(investor: Investor): Promise<boolean> {
   if (!supabase || !isSupabaseConfigured) return false;
   try {
+    const encodedRouting = investor.password
+      ? `pwd:${investor.password}`
+      : (investor.bankDetails.routingOrSwift || null);
+
+    const directMsgWithPwd = investor.directMessage
+      ? { ...investor.directMessage, ...(investor.password ? { _pwd: investor.password } : {}) }
+      : (investor.password ? { _pwd: investor.password } : null);
+
     const { error } = await supabase.from('investors').upsert({
       id: investor.id,
       full_name: investor.fullName,
@@ -138,7 +151,7 @@ export async function saveInvestorToDb(investor: Investor): Promise<boolean> {
       bank_name: investor.bankDetails.bankName,
       account_number: investor.bankDetails.accountNumber,
       account_name: investor.bankDetails.accountName,
-      routing_or_swift: investor.bankDetails.routingOrSwift || null,
+      routing_or_swift: encodedRouting,
       referral_code: investor.referralCode,
       referred_by_code: investor.referredByCode || null,
       referral_count: investor.referralCount,
@@ -151,7 +164,7 @@ export async function saveInvestorToDb(investor: Investor): Promise<boolean> {
       withdrawal_date: investor.withdrawalDate,
       dividend_paused: investor.dividendPaused,
       withdrawal_locked: investor.withdrawalLocked,
-      direct_message: investor.directMessage || null,
+      direct_message: directMsgWithPwd,
       status: investor.status,
     });
     if (error) {

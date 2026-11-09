@@ -71,7 +71,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ onOpenRegister, onGo
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           <div className="p-5 rounded-xl bg-black border border-neutral-800 space-y-2.5">
             <span className="text-2xl font-black text-emerald-400 font-mono">01</span>
             <h4 className="font-bold text-white text-base">Direct Cooperative Vetting</h4>
@@ -100,7 +100,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ onOpenRegister, onGo
             <span className="text-2xl font-black text-emerald-400 font-mono">04</span>
             <h4 className="font-bold text-white text-base">Direct Dividend Fulfillment</h4>
             <p className="text-xs text-neutral-400 leading-relaxed">
-              Members track daily progress via their visual Commitment Bar (%) and request withdrawal ("Get Assistance") upon maturity.
+              Members track daily progress via their visual Commitment Bar (%) and request withdrawal (Get Assistance) upon maturity.
             </p>
           </div>
         </div>

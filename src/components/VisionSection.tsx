@@ -24,9 +24,9 @@ export const VisionSection: React.FC<VisionSectionProps> = ({ onOpenRegister, on
       </section>
 
       {/* 3 Core Strategic Pillars */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
         
-        <div className="p-8 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-4">
+        <div className="p-6 sm:p-7 md:p-8 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-4">
           <h3 className="text-xl font-bold text-white">Quadrupling Crop Yields</h3>
           <p className="text-sm text-neutral-300 leading-relaxed">
             By shifting farmers from handheld machetes and hoes to mechanized harvesters, precision seed drills, and drip irrigation, average grain yields elevate from 1.5 tons to 6.8 tons per hectare.

@@ -15,11 +15,37 @@ export interface ReferralBonusRecord {
   supportAmount?: number;
 }
 
+export interface ReferralWithdrawalRequest {
+  id: string;
+  investorId: string;
+  investorName: string;
+  phone: string;
+  amount: number;
+  bankDetails: BankDetails;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+  approvedAt?: string;
+  adminNote?: string;
+}
+
+export interface PeerChatMessage {
+  id: string;
+  orderId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'PAYER' | 'RECIPIENT';
+  recipientId: string;
+  recipientName: string;
+  text: string;
+  timestamp: string;
+}
+
 export interface Investor {
   id: string;
   fullName: string;
   email: string;
   phone: string;
+  password?: string;
   bankDetails: BankDetails;
   referralCode: string;
   referredByCode?: string;
@@ -75,7 +101,23 @@ export interface AssistanceOrder {
     matchedAt: string;
     proofSubmitted?: boolean;
     proofNote?: string;
+    proofReceiptUrl?: string;
+    proofReceiptName?: string;
+    proofSubmittedAt?: string;
+    recipientConfirmed?: boolean;
+    recipientConfirmedAt?: string;
+    adminApproved?: boolean;
+    adminApprovedAt?: string;
   };
+  proofSubmitted?: boolean;
+  proofNote?: string;
+  proofReceiptUrl?: string;
+  proofReceiptName?: string;
+  proofSubmittedAt?: string;
+  recipientConfirmed?: boolean;
+  recipientConfirmedAt?: string;
+  adminApproved?: boolean;
+  adminApprovedAt?: string;
   proofOfPaymentNote?: string;
   createdAt: string;
 }

@@ -10,16 +10,16 @@ interface LogoProps {
 
 export const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '', theme = 'emerald' }) => {
   const sizeMap = {
-    sm: 'w-8 h-8',
-    md: 'w-11 h-11',
-    lg: 'w-16 h-16',
-    xl: 'w-24 h-24'
+    sm: 'w-7 h-7 sm:w-8 sm:h-8',
+    md: 'w-9 h-9 sm:w-11 sm:h-11',
+    lg: 'w-14 h-14 sm:w-16 sm:h-16',
+    xl: 'w-20 h-20 sm:w-24 sm:h-24'
   };
 
   const isRed = theme === 'red';
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex items-center gap-2 sm:gap-3 ${className}`}>
       <div className={`relative shrink-0 ${sizeMap[size]} rounded-full p-[2px] ${
         isRed
           ? 'bg-gradient-to-br from-red-500 via-rose-600 to-red-800 shadow-lg shadow-red-950/80'
@@ -57,9 +57,11 @@ export const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, classN
           <span className="text-base sm:text-lg font-black tracking-wider text-white uppercase flex items-center gap-1.5">
             Farm Base <span className={isRed ? 'text-red-500' : 'text-emerald-500'}>Club</span>
           </span>
-          <span className="text-[10px] tracking-widest text-neutral-400 uppercase font-medium">
-            Empowering Farmers · Harvesting Yields
-          </span>
+          <div className="text-[9px] sm:text-[10px] tracking-widest text-neutral-400 uppercase font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1.5 leading-tight">
+            <span>Empowering Farmers</span>
+            <span className="hidden sm:inline text-neutral-500">·</span>
+            <span>Harvesting Yields</span>
+          </div>
         </div>
       )}
     </div>

@@ -1,10 +1,15 @@
 @import "tailwindcss";
 
 @layer base {
+  html,
   body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: #000000;
     color: #ffffff;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .font-mono-nums {
@@ -23,7 +28,7 @@
 }
 
 .animate-marquee-smooth {
-  animation: marquee-scroll 180s linear infinite;
+  animation: marquee-scroll 650s linear infinite;
   will-change: transform;
 }
 
@@ -36,15 +41,15 @@
 }
 
 .speed-fast {
-  animation-duration: 110s !important;
+  animation-duration: 400s !important;
 }
 
 .speed-normal {
-  animation-duration: 180s !important;
+  animation-duration: 650s !important;
 }
 
 .speed-slow {
-  animation-duration: 260s !important;
+  animation-duration: 900s !important;
 }
 
 /* Hide scrollbar for smooth horizontal dragging */

@@ -90,10 +90,10 @@ export const Footer: React.FC<FooterProps> = ({
             </h4>
             <ul className="space-y-2 text-sm text-neutral-400">
               <li>
-                <span className="text-neutral-400 text-xs">"Render Assistance" (Offer to Pay)</span>
+                <span className="text-neutral-400 text-xs">Render Assistance (Offer to Pay)</span>
               </li>
               <li>
-                <span className="text-neutral-400 text-xs">"Get Assistance" (Demand Payment)</span>
+                <span className="text-neutral-400 text-xs">Get Assistance (Demand Payment)</span>
               </li>
               <li>
                 <span className="text-neutral-400 text-xs">Commitment Bar (% Dividend)</span>

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Investor, BankDetails, AssistanceHistoryItem, AssistanceOrder, AdminControls, ReferralBonusRecord, LiveAssistanceActivity } from '../types';
+import { Investor, BankDetails, AssistanceHistoryItem, AssistanceOrder, AdminControls, ReferralBonusRecord, ReferralWithdrawalRequest, PeerChatMessage, LiveAssistanceActivity } from '../types';
 import { NIGERIAN_BANKS } from '../data/banks';
+import { checkDuplicateRegistration, getAllRegisteredInvestors } from '../utils/registrationValidation';
 import { Logo } from './Logo';
-import { LiveAssistanceTicker } from './LiveAssistanceTicker';
 import {
   User,
   Copy,
@@ -39,7 +39,8 @@ import {
   FileText,
   Image as ImageIcon,
   FileCheck2,
-  Download
+  Download,
+  LogOut,
 } from 'lucide-react';
 
 interface InvestorDashboardProps {
@@ -53,10 +54,17 @@ interface InvestorDashboardProps {
   isAdminLoggedIn?: boolean;
   onApproveInvestor?: (investorId: string) => void;
   onReturnToAdmin?: () => void;
+  onLogout?: () => void;
   onWithdrawReferralBonus?: (investorId: string, amount: number) => void;
+  onRequestWithdrawReferralBonus?: (investorId: string, amount: number) => void;
+  referralWithdrawalRequests?: ReferralWithdrawalRequest[];
   onUpdateBankDetails?: (bankDetails: BankDetails, phone: string) => void;
   onDepositWallet?: (amount: number) => void;
   onConfirmReceivedPayment?: (orderId: string) => void;
+  onSubmitProofOfPayment?: (
+    orderId: string,
+    proof: { receiptUrl: string; receiptName: string; note: string }
+  ) => void;
   onSendInquiry?: (data: { name: string; email: string; phone?: string; subject: string; message: string }) => void;
 }
 
@@ -71,10 +79,14 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   isAdminLoggedIn = false,
   onApproveInvestor,
   onReturnToAdmin,
+  onLogout,
   onWithdrawReferralBonus,
+  onRequestWithdrawReferralBonus,
+  referralWithdrawalRequests = [],
   onUpdateBankDetails,
   onDepositWallet,
   onConfirmReceivedPayment,
+  onSubmitProofOfPayment,
   onSendInquiry,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
@@ -82,7 +94,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
   // Interactive Modals State
   const [isEditAccountOpen, setIsEditAccountOpen] = useState(false);
-  const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isMessageAdminOpen, setIsMessageAdminOpen] = useState(false);
   const [isViewPayAccountOpen, setIsViewPayAccountOpen] = useState(false);
   const [isViewPayerPhoneOpen, setIsViewPayerPhoneOpen] = useState(false);
@@ -91,15 +102,14 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   // Direct Messaging to Recipient's Dashboard & WhatsApp
   const [recipientDirectMessage, setRecipientDirectMessage] = useState('');
   const [sentRecipientMessages, setSentRecipientMessages] = useState<Array<{ id: string; text: string; time: string; recipient: string }>>([]);
+  const [copiedAccountNumber, setCopiedAccountNumber] = useState(false);
+  const [copiedRecipientPhone, setCopiedRecipientPhone] = useState(false);
 
   // Edit Account Form State
   const [editBankName, setEditBankName] = useState(investor.bankDetails.bankName || '');
   const [editAccountNumber, setEditAccountNumber] = useState(investor.bankDetails.accountNumber || '');
   const [editAccountName, setEditAccountName] = useState(investor.bankDetails.accountName || investor.fullName);
   const [editPhone, setEditPhone] = useState(investor.phone || '');
-
-  // Deposit Form State
-  const [depositAmount, setDepositAmount] = useState('10000');
 
   // Contact Admin Form State
   const [adminSubject, setAdminSubject] = useState('Support Inquiry / Proof of Payment');
@@ -125,43 +135,30 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
   const [isWithdrawBonusModalOpen, setIsWithdrawBonusModalOpen] = useState(false);
   const [withdrawnTotal, setWithdrawnTotal] = useState(0);
 
+  // Peer In-App Chat Dialog State
+  const [isPeerChatOpen, setIsPeerChatOpen] = useState(false);
+  const [chatCounterparty, setChatCounterparty] = useState<{
+    orderId: string;
+    counterpartyId: string;
+    counterpartyName: string;
+    counterpartyPhone: string;
+    counterpartyRole: 'RECIPIENT' | 'PAYER';
+    amount?: number;
+    bankDetails?: BankDetails;
+  } | null>(null);
+  const [chatMessages, setChatMessages] = useState<PeerChatMessage[]>([]);
+  const [chatInputText, setChatInputText] = useState('');
+
   const [bonusHistory, setBonusHistory] = useState<ReferralBonusRecord[]>(
-    investor.referralBonusHistory && investor.referralBonusHistory.length > 0
-      ? investor.referralBonusHistory
-      : (investor.referralEarnings || 0) > 0
-      ? [
-          {
-            id: 'bon-rec-1',
-            refereeName: 'Chukwudi Nnamdi',
-            amount: 4000,
-            date: '2026-10-25',
-            status: 'ACCRUED',
-            supportRendered: true,
-            supportAmount: 150000,
-          },
-          {
-            id: 'bon-rec-2',
-            refereeName: 'Amina Yusuf',
-            amount: 4000,
-            date: '2026-10-26',
-            status: 'ACCRUED',
-            supportRendered: true,
-            supportAmount: 100000,
-          },
-          {
-            id: 'bon-rec-3',
-            refereeName: 'Babatunde Adeleke',
-            amount: 4000,
-            date: '2026-10-27',
-            status: 'ACCRUED',
-            supportRendered: true,
-            supportAmount: 120000,
-          },
-        ]
-      : []
+    investor.referralBonusHistory || []
   );
   const [bonusHistoryWiped, setBonusHistoryWiped] = useState(
     (investor.referralEarnings || 0) === 0 && (!investor.referralBonusHistory || investor.referralBonusHistory.length === 0)
+  );
+
+  // Check if current user has an active pending withdrawal request
+  const userPendingReferralRequest = referralWithdrawalRequests.find(
+    (r) => r.investorId === investor.id && r.status === 'PENDING'
   );
 
   // Business Rule: Referral bonus (₦4,000) is ONLY added when the referred person has rendered support to another person
@@ -188,9 +185,89 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     setTimeout(() => setToastNotice(null), 3800);
   };
 
+  const handleOpenPeerChat = (
+    orderId: string,
+    counterpartyId: string,
+    counterpartyName: string,
+    counterpartyPhone: string,
+    counterpartyRole: 'RECIPIENT' | 'PAYER',
+    amount?: number,
+    bankDetails?: BankDetails
+  ) => {
+    setChatCounterparty({
+      orderId,
+      counterpartyId,
+      counterpartyName,
+      counterpartyPhone,
+      counterpartyRole,
+      amount,
+      bankDetails,
+    });
+    try {
+      const saved = localStorage.getItem(`farmbase_peer_chat_${orderId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChatMessages(parsed);
+          setIsPeerChatOpen(true);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+    const starter: PeerChatMessage = {
+      id: `msg-${Date.now()}`,
+      orderId,
+      senderId: investor.id,
+      senderName: investor.fullName,
+      senderRole: counterpartyRole === 'RECIPIENT' ? 'PAYER' : 'RECIPIENT',
+      recipientId: counterpartyId,
+      recipientName: counterpartyName,
+      text:
+        counterpartyRole === 'RECIPIENT'
+          ? `Hello ${counterpartyName}, I am matched to render assistance of ₦${(amount || 0).toLocaleString()} to you. I am preparing your payment.`
+          : `Hello ${counterpartyName}, I see you are matched to pay ₦${(amount || 0).toLocaleString()} to my bank account. Please notify me here once sent.`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setChatMessages([starter]);
+    setIsPeerChatOpen(true);
+  };
+
+  const handleSendPeerChatMessage = (quickText?: string) => {
+    const text = (quickText || chatInputText).trim();
+    if (!text || !chatCounterparty) return;
+
+    const newMsg: PeerChatMessage = {
+      id: `msg-${Date.now()}`,
+      orderId: chatCounterparty.orderId,
+      senderId: investor.id,
+      senderName: investor.fullName,
+      senderRole: chatCounterparty.counterpartyRole === 'RECIPIENT' ? 'PAYER' : 'RECIPIENT',
+      recipientId: chatCounterparty.counterpartyId,
+      recipientName: chatCounterparty.counterpartyName,
+      text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    const updated = [...chatMessages, newMsg];
+    setChatMessages(updated);
+    setChatInputText('');
+    try {
+      localStorage.setItem(`farmbase_peer_chat_${chatCounterparty.orderId}`, JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
   const handleConfirmWithdrawBonus = () => {
     if (qualifiedReferrals < requiredReferrals) {
       showToast(`Withdrawal locked: You need at least ${requiredReferrals} referrals who rendered support to withdraw your bonus (${qualifiedReferrals}/${requiredReferrals} completed).`);
+      return;
+    }
+
+    if (userPendingReferralRequest) {
+      showToast('You already have a pending referral bonus withdrawal awaiting admin approval.');
       return;
     }
 
@@ -200,15 +277,14 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       return;
     }
 
-    if (onWithdrawReferralBonus) {
+    if (onRequestWithdrawReferralBonus) {
+      onRequestWithdrawReferralBonus(investor.id, amt);
+    } else if (onWithdrawReferralBonus) {
       onWithdrawReferralBonus(investor.id, amt);
     }
-    // Wipe bonus history immediately
-    setBonusHistory([]);
-    setBonusHistoryWiped(true);
-    setWithdrawnTotal((prev) => prev + amt);
+
     setIsWithdrawBonusModalOpen(false);
-    showToast(`Referral bonus of ₦${amt.toLocaleString()} withdrawn to your bank account! Bonus history has been wiped clean.`);
+    showToast(`Withdrawal request for ₦${amt.toLocaleString()} submitted to Admin! It will be reviewed and disbursed upon approval.`);
   };
 
   const handleSimulateRefereeRenderSupport = (refereeName: string, supportAmt: number = 100000) => {
@@ -270,6 +346,25 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
 
   const handleSaveAccountDetails = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const allRegistered = getAllRegisteredInvestors();
+    const otherRegistered = allRegistered.filter((inv) => inv.id !== investor.id);
+    const dupCheck = checkDuplicateRegistration(
+      {
+        fullName: investor.fullName,
+        email: investor.email,
+        phone: editPhone,
+        accountNumber: editAccountNumber,
+        accountName: editAccountName,
+      },
+      otherRegistered
+    );
+
+    if (dupCheck.isDuplicate && dupCheck.field !== 'fullName' && dupCheck.field !== 'email') {
+      showToast(dupCheck.message || 'Duplicate banking or phone coordinates detected. Details are already in use by another member.');
+      return;
+    }
+
     if (onUpdateBankDetails) {
       onUpdateBankDetails(
         {
@@ -282,17 +377,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     }
     setIsEditAccountOpen(false);
     showToast('Account details (Bank & Phone) updated successfully!');
-  };
-
-  const handleDepositSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const amt = parseFloat(depositAmount) || 0;
-    if (amt <= 0) return;
-    if (onDepositWallet) {
-      onDepositWallet(amt);
-    }
-    setIsDepositOpen(false);
-    showToast(`₦${amt.toLocaleString()} added to your wallet successfully!`);
   };
 
   const handleSendMessageToAdmin = (e: React.FormEvent) => {
@@ -319,8 +403,8 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     showToast('Payment receipt confirmed! Admin has been notified.');
   };
 
-  // WhatsApp and Direct Dashboard Messaging Helper for Recipient
-  const handleOpenWhatsApp = (phone: string, recipientName: string, amount: number) => {
+  // WhatsApp and Direct Dial Links for Recipient
+  const getWhatsAppLink = (phone: string, name: string, amount: number) => {
     const cleanPhone = (phone || '').replace(/\D/g, '');
     const intlPhone = cleanPhone.startsWith('0')
       ? '234' + cleanPhone.slice(1)
@@ -328,9 +412,30 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       ? cleanPhone
       : '234' + cleanPhone;
     const text = encodeURIComponent(
-      `Hello ${recipientName}, I am contacting you from Farm Base Club regarding my agricultural support payment of ₦${amount.toLocaleString()}. Please confirm your account details or acknowledge receipt.`
+      `Hello ${name || 'Member'}, I am contacting you from Farm Base Club regarding my agricultural assistance payment of ₦${(amount || 0).toLocaleString()}. Please confirm your account details or acknowledge receipt.`
     );
-    window.open(`https://wa.me/${intlPhone}?text=${text}`, '_blank');
+    return `https://wa.me/${intlPhone}?text=${text}`;
+  };
+
+  const getTelLink = (phone: string) => {
+    const clean = (phone || '').replace(/[^\d+]/g, '');
+    return `tel:${clean}`;
+  };
+
+  const handleCopyRecipientAccount = (accNo: string) => {
+    if (!accNo) return;
+    navigator.clipboard.writeText(accNo);
+    setCopiedAccountNumber(true);
+    showToast('Account number copied to clipboard!');
+    setTimeout(() => setCopiedAccountNumber(false), 2000);
+  };
+
+  const handleCopyRecipientPhone = (phoneNum: string) => {
+    if (!phoneNum) return;
+    navigator.clipboard.writeText(phoneNum);
+    setCopiedRecipientPhone(true);
+    showToast('Phone number copied to clipboard!');
+    setTimeout(() => setCopiedRecipientPhone(false), 2000);
   };
 
   const handleSendDirectToRecipientDashboard = (recipientName: string) => {
@@ -399,76 +504,73 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
     showToast('Payment receipt attached (transfer_receipt.png)!');
   };
 
-  // Find matched orders for this investor
-  const renderOrders = assistanceOrders.filter(
-    (o) => o.investorId === investor.id && o.type === 'RENDER' && o.status === 'MATCHED'
-  );
-  const getOrders = assistanceOrders.filter(
-    (o) => o.investorId === investor.id && o.type === 'GET' && o.status === 'MATCHED'
+  // Find matched orders for this investor (strict check: investor must not be guest, status must be MATCHED with valid matched peer)
+  const isRealMember = Boolean(investor.id && investor.id !== 'guest');
+
+  const renderOrders = isRealMember
+    ? assistanceOrders.filter(
+        (o) =>
+          o.investorId === investor.id &&
+          o.type === 'RENDER' &&
+          o.status === 'MATCHED' &&
+          Boolean(o.matchedWith?.investorName)
+      )
+    : [];
+
+  const getOrders = isRealMember
+    ? assistanceOrders.filter(
+        (o) =>
+          o.investorId === investor.id &&
+          o.type === 'GET' &&
+          o.status === 'MATCHED' &&
+          Boolean(o.matchedWith?.investorName)
+      )
+    : [];
+
+  // Active matched orders for this investor (strictly null if not matched)
+  const activePayMatch = renderOrders.length > 0 ? renderOrders[0] : null;
+  const activePayoutMatch = getOrders.length > 0 ? getOrders[0] : null;
+
+  const isReallyMatchedPay = Boolean(
+    activePayMatch &&
+    activePayMatch.status === 'MATCHED' &&
+    activePayMatch.matchedWith?.investorName
   );
 
-  // Fallback active matched display matching the exact screenshots if no dynamic match exists
-  const activePayMatch = renderOrders[0] || {
-    id: 'ORD-R-205',
-    type: 'RENDER' as const,
-    investorId: investor.id,
-    investorName: investor.fullName,
-    phone: investor.phone,
-    amount: investor.activeAssistance || 150000,
-    bankDetails: investor.bankDetails,
-    status: 'MATCHED' as const,
-    matchedWith: {
-      orderId: 'ORD-G-301',
-      investorId: 'inv-301',
-      investorName: 'Ugwuode Chukwuebuka Michael',
-      phone: '08062675560',
-      bankDetails: {
-        bankName: 'OPay',
-        accountNumber: '8062675560',
-        accountName: 'Ugwuode Chukwuebuka Michael',
-      },
-      matchedAt: '2026-10-27 12:00',
-    },
-    createdAt: '2026-10-26 14:15',
-  };
+  const isReallyMatchedPayout = Boolean(
+    activePayoutMatch &&
+    activePayoutMatch.status === 'MATCHED' &&
+    activePayoutMatch.matchedWith?.investorName
+  );
 
-  const activePayoutMatch = getOrders[0] || {
-    id: 'ORD-G-205',
-    type: 'GET' as const,
-    investorId: investor.id,
-    investorName: investor.fullName,
-    phone: investor.phone,
-    amount: 100000,
-    bankDetails: investor.bankDetails,
-    status: 'MATCHED' as const,
-    matchedWith: {
-      orderId: 'ORD-R-206',
-      investorId: 'inv-206',
-      investorName: 'OKORO CALISTUS KELECHI',
-      phone: '08132662948',
-      bankDetails: {
-        bankName: 'First Bank of Nigeria',
-        accountNumber: '3012345678',
-        accountName: 'OKORO CALISTUS KELECHI',
-      },
-      matchedAt: '2026-10-27 14:30',
-    },
-    createdAt: '2026-10-26 16:20',
-  };
+  const pendingRenderOrder = isRealMember
+    ? assistanceOrders.find(
+        (o) => o.investorId === investor.id && o.type === 'RENDER' && o.status === 'WAITING_MATCH'
+      )
+    : null;
+
+  const pendingGetOrder = isRealMember
+    ? assistanceOrders.find(
+        (o) => o.investorId === investor.id && o.type === 'GET' && o.status === 'WAITING_MATCH'
+      )
+    : null;
 
   // Recent activity list
   const userHistory = assistanceHistory.filter((item) => item.investorId === investor.id);
 
-  const supportedCapital = investor.activeAssistance || 150000;
+  const supportedCapital = Number(investor.activeAssistance) || 0;
+  const hasRenderedAssistance = supportedCapital > 0 || Number(investor.totalAssisted || 0) > 0;
+  const isAssistanceCycleComplete =
+    investor.status === 'ACTIVE' && supportedCapital > 0 && (investor.dividendPercent || 0) >= 100;
   const expectedProfit = Math.round(supportedCapital * 0.20);
   const accruedProfit = Math.round(expectedProfit * ((investor.dividendPercent || 0) / 100));
 
   const currentPayMatch = selectedMatchedOrder || activePayMatch;
-  const recipientName = currentPayMatch.matchedWith?.investorName || 'Ugwuode Chukwuebuka Michael';
-  const recipientPhone = currentPayMatch.matchedWith?.phone || '08062675560';
-  const recipientBank = currentPayMatch.matchedWith?.bankDetails.bankName || 'OPay';
-  const recipientAccountNo = currentPayMatch.matchedWith?.bankDetails.accountNumber || '8062675560';
-  const matchAmount = currentPayMatch.amount || 150000;
+  const recipientName = currentPayMatch?.matchedWith?.investorName || '';
+  const recipientPhone = currentPayMatch?.matchedWith?.phone || '';
+  const recipientBank = currentPayMatch?.matchedWith?.bankDetails?.bankName || '';
+  const recipientAccountNo = currentPayMatch?.matchedWith?.bankDetails?.accountNumber || '';
+  const matchAmount = currentPayMatch?.amount || 0;
 
   return (
     <div className="space-y-6 py-4 pb-24 text-neutral-100 font-sans bg-black">
@@ -585,6 +687,78 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         </div>
       )}
 
+      {/* Top Action Hub: Compact Render Assistance (GREEN) & Get Assistance (GOLDEN) under GLOBAL DASHBOARD NOTICE */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+        {/* Button 1: Render Assistance (GREEN - Reduced Size) */}
+        <button
+          type="button"
+          onClick={onOpenRenderAssistance}
+          className="py-3 px-3 sm:py-3.5 sm:px-4 rounded-xl bg-gradient-to-b from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 border border-emerald-400 text-white shadow-lg shadow-emerald-950/50 transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer flex flex-col items-center justify-center text-center space-y-1.5 group"
+        >
+          <div className="w-8 h-8 rounded-full bg-emerald-950/80 border border-emerald-300/60 flex items-center justify-center text-white group-hover:scale-105 transition-transform shadow-inner">
+            <ArrowUpRight className="w-4 h-4 text-emerald-200" />
+          </div>
+          <div className="text-xs sm:text-sm font-bold text-white tracking-wide">
+            Render Assistance
+          </div>
+          <span className="text-[10px] font-bold text-emerald-950 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full shadow-sm">
+            Matched to Pay
+          </span>
+        </button>
+
+        {/* Button 2: Get Assistance (Inactive until 20-day cycle is complete) */}
+        <button
+          type="button"
+          onClick={isAssistanceCycleComplete ? onOpenGetAssistance : undefined}
+          disabled={!isAssistanceCycleComplete}
+          aria-disabled={!isAssistanceCycleComplete}
+          className={`py-3 px-3 sm:py-3.5 sm:px-4 rounded-xl border transition-all flex flex-col items-center justify-center text-center space-y-1.5 group ${
+            isAssistanceCycleComplete
+              ? 'bg-gradient-to-b from-amber-500 via-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 border-amber-300 text-neutral-950 shadow-lg shadow-amber-950/50 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer'
+              : 'bg-neutral-900/90 border-neutral-800 text-neutral-500 opacity-60 cursor-not-allowed shadow-none'
+          }`}
+          title={
+            isAssistanceCycleComplete
+              ? 'Your 20-Day Agricultural Cycle is Complete! Click to Demand Payment'
+              : supportedCapital === 0
+              ? 'Offer to Render Assistance first to initiate your cycle'
+              : investor.status === 'PENDING'
+              ? 'Payment proof submitted. Awaiting Admin Approval to start growth progress'
+              : `Assistance cycle is still growing (${Math.round(((investor.dividendPercent || 0) / 100) * 20)}/20 Days · ${investor.dividendPercent || 0}%). Available at 100% maturity.`
+          }
+        >
+          <div className={`w-8 h-8 rounded-full border flex items-center justify-center shadow-inner ${
+            isAssistanceCycleComplete
+              ? 'bg-amber-950/80 border-yellow-300/60 text-amber-200 group-hover:scale-105 transition-transform'
+              : 'bg-neutral-950 border-neutral-700 text-neutral-600'
+          }`}>
+            <ArrowDownLeft className="w-4 h-4" />
+          </div>
+          <div className={`text-xs sm:text-sm font-black tracking-wide ${
+            isAssistanceCycleComplete ? 'text-neutral-950' : 'text-neutral-400'
+          }`}>
+            Get Assistance
+          </div>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm border ${
+            isAssistanceCycleComplete
+              ? 'text-amber-950 bg-amber-100 border-amber-300'
+              : supportedCapital === 0
+              ? 'text-neutral-400 bg-neutral-950 border-neutral-800'
+              : investor.status === 'PENDING'
+              ? 'text-amber-400 bg-amber-950/40 border-amber-800'
+              : 'text-amber-400/80 bg-neutral-950 border-amber-900/40'
+          }`}>
+            {isAssistanceCycleComplete
+              ? '✓ 20-Day Cycle Complete (Claim Yield)'
+              : supportedCapital === 0
+              ? 'Render Assist First'
+              : investor.status === 'PENDING'
+              ? 'Awaiting Admin Approval'
+              : `Cycle Incomplete (${Math.round(((investor.dividendPercent || 0) / 100) * 20)}/20 Days)`}
+          </span>
+        </button>
+      </div>
+
       {/* Main Two-Column Dashboard Layout (Pure Pitch Black Theme) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
@@ -593,34 +767,49 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
         {/* ======================================================== */}
         <div className="lg:col-span-4 space-y-5">
           
-          {/* Card 1: User Profile & Pending Admin Approval Status */}
+          {/* Responsive Tablet Group 1: Profile & Referral side-by-side on md: screens */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-5 items-start">
+            
+            {/* Card 1: User Profile & Pending Admin Approval Status */}
           <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-4 shadow-xl">
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-emerald-400 text-lg shadow-inner shrink-0">
-                {investor.fullName ? investor.fullName.charAt(0).toUpperCase() : 'U'}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center font-bold text-emerald-400 text-lg shadow-inner shrink-0">
+                  {investor.fullName ? investor.fullName.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-white truncate">
+                    {investor.fullName}
+                  </h3>
+                  <p className="text-xs text-neutral-400 truncate">
+                    {investor.email}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-white truncate">
-                  {investor.fullName}
-                </h3>
-                <p className="text-xs text-neutral-400 truncate">
-                  {investor.email}
-                </p>
+
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 hover:border-red-500/60 text-neutral-300 hover:text-white text-xs font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
+                  title="Log out of Member Dashboard"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-red-400" />
+                  <span>Log Out</span>
+                </button>
+              )}
+            </div>
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                   <button
                     type="button"
-                    onClick={handleCopyReferral}
-                    className="px-2.5 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-emerald-400 text-[11px] font-medium flex items-center gap-1 hover:border-emerald-500 transition cursor-pointer"
+                    onClick={() => setIsEditAccountOpen(true)}
+                    className="px-2.5 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-300 hover:text-white text-[11px] font-medium flex items-center gap-1 hover:border-amber-500 transition cursor-pointer"
+                    title="Edit bank details and phone number"
                   >
-                    <span>Referral Link</span>
-                    <Copy className="w-3 h-3 text-emerald-400" />
+                    <Smartphone className="w-3 h-3 text-amber-400" />
+                    <span>Edit Bank/Phone</span>
                   </button>
-                  <span className="px-2.5 py-0.5 rounded-full bg-neutral-900 border border-neutral-800 text-amber-400 text-[11px] font-medium font-mono-nums">
-                    {qualifiedReferrals}/{totalReferrals} Paid Support (₦{availableBonus.toLocaleString()})
-                  </span>
                 </div>
-              </div>
-            </div>
 
             {/* Approval Status Alert Box */}
             {investor.status === 'PENDING' ? (
@@ -644,35 +833,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 </p>
               </div>
             )}
-
-            {/* USER WALLET */}
-            <div className="pt-2 border-t border-neutral-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-                  USER WALLET
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsDepositOpen(true)}
-                  className="text-xs font-bold text-amber-400 hover:text-amber-300 transition cursor-pointer"
-                >
-                  + Deposit NGN
-                </button>
-              </div>
-
-              <div className="text-3xl font-extrabold text-white font-mono-nums tracking-tight">
-                ₦{(investor.walletBalance || 0).toLocaleString()}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsEditAccountOpen(true)}
-                className="w-full py-2.5 px-4 rounded-xl bg-black border border-neutral-800 hover:border-neutral-700 text-neutral-200 hover:text-white text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-              >
-                <Smartphone className="w-4 h-4 text-amber-400" />
-                <span>Edit Account Details (Bank & Phone)</span>
-              </button>
-            </div>
           </div>
 
           {/* Card 2: Referral Program Card (Requires 3 Referrals with Support Rendered) */}
@@ -792,23 +952,49 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   </span>
                 </div>
 
+                {userPendingReferralRequest && (
+                  <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800 text-xs text-amber-200 flex items-start gap-2.5">
+                    <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-amber-300">
+                        Withdrawal Request Pending Admin Approval
+                      </div>
+                      <div className="text-[11px] text-neutral-300">
+                        Requested: <strong className="text-white">₦{userPendingReferralRequest.amount.toLocaleString()}</strong> to {userPendingReferralRequest.bankDetails?.bankName} ({userPendingReferralRequest.bankDetails?.accountNumber}). Farm Base Admin is verifying and will approve disbursement.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Main Referral Bonus Withdrawal Button */}
                 <button
                   type="button"
+                  disabled={Boolean(userPendingReferralRequest)}
                   onClick={() => {
+                    if (userPendingReferralRequest) {
+                      showToast('Your previous withdrawal request is currently pending admin approval.');
+                      return;
+                    }
                     if (!isReferralUnlocked) {
                       showToast(`You must get 3 referrals who rendered support before withdrawing your bonus (${qualifiedReferrals}/3 qualified).`);
                     } else {
                       setIsWithdrawBonusModalOpen(true);
                     }
                   }}
-                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
-                    isReferralUnlocked
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/60'
-                      : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                  className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg ${
+                    userPendingReferralRequest
+                      ? 'bg-neutral-900 border border-amber-800/60 text-amber-300/80 cursor-not-allowed opacity-90'
+                      : isReferralUnlocked
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/60 cursor-pointer'
+                      : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:border-neutral-700 cursor-pointer'
                   }`}
                 >
-                  {isReferralUnlocked ? (
+                  {userPendingReferralRequest ? (
+                    <>
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span>Pending Admin Approval (₦{userPendingReferralRequest.amount.toLocaleString()})</span>
+                    </>
+                  ) : isReferralUnlocked ? (
                     <>
                       <Gift className="w-4 h-4" />
                       <span>Withdraw Referral Bonus {availableBonus > 0 ? `(₦${availableBonus.toLocaleString()})` : ''}</span>
@@ -891,107 +1077,75 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 </div>
               </div>
             </div>
+
+          </div>
           </div>
 
-          {/* Card 3: Two Action Tiles (Side by Side: Render Assistance & Get Assistance) */}
-          <div className="grid grid-cols-2 gap-3.5">
-            {/* Tile 1: Render Assistance */}
-            <div
-              onClick={onOpenRenderAssistance}
-              className="p-4 rounded-2xl bg-[#0a0a0a] border border-neutral-800 hover:border-emerald-500 transition cursor-pointer flex flex-col items-center text-center space-y-2 shadow-lg group"
-            >
-              <div className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform">
-                <ArrowUpRight className="w-5 h-5" />
-              </div>
-              <div className="text-sm font-bold text-white">Render Assistance</div>
-              <span className="text-[10px] font-bold text-emerald-400 bg-neutral-900 border border-neutral-700 px-2 py-0.5 rounded-full">
-                Matched to Pay
-              </span>
-            </div>
-
-            {/* Tile 2: Get Assistance */}
-            <div
-              onClick={onOpenGetAssistance}
-              className="p-4 rounded-2xl bg-[#0a0a0a] border border-neutral-800 hover:border-amber-600 transition cursor-pointer flex flex-col items-center text-center space-y-2 shadow-lg group"
-            >
-              <div className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-amber-400 group-hover:scale-105 transition-transform">
-                <ArrowDownLeft className="w-5 h-5" />
-              </div>
-              <div className="text-sm font-bold text-white">Get Assistance</div>
-              <span className="text-[10px] font-bold text-amber-400 bg-neutral-900 border border-neutral-700 px-2 py-0.5 rounded-full">
-                Payer Assigned
-              </span>
-            </div>
-          </div>
-
-          {/* Card 4: Message Admin Desk Tile */}
-          <div
-            onClick={() => setIsMessageAdminOpen(true)}
-            className="p-3.5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 hover:border-emerald-500 transition cursor-pointer flex items-center justify-between shadow-lg"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center text-emerald-400 shrink-0">
-                <MessageSquare className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white">Message Admin Desk</div>
-                <div className="text-[11px] text-neutral-400">Upload receipts & ask questions</div>
-              </div>
-            </div>
-            <ArrowUpRight className="w-4 h-4 text-neutral-400" />
-          </div>
-
-          {/* Card 5: Recent Activity */}
-          <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-3 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-white">Recent Activity</h4>
-              <button
-                type="button"
-                onClick={() => showToast('Displaying full activity ledger.')}
-                className="text-xs text-neutral-400 hover:text-white transition cursor-pointer"
+          {/* Responsive Tablet Group 2: Action Tiles & Activity on md: screens */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-5 items-start">
+            
+            <div className="space-y-4">
+              {/* Card 4: Message Admin Desk Tile */}
+              <div
+                onClick={() => setIsMessageAdminOpen(true)}
+                className="p-3.5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 hover:border-emerald-500 transition cursor-pointer flex items-center justify-between shadow-lg"
               >
-                View All
-              </button>
-            </div>
-
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-black border border-neutral-800/80 text-xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-emerald-400 shrink-0">
-                    <ArrowUpRight className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center text-emerald-400 shrink-0">
+                    <MessageSquare className="w-4 h-4" />
                   </div>
                   <div>
-                    <div className="font-bold text-white">Render Assistance</div>
-                    <div className="text-[10px] text-neutral-500 font-mono-nums">10/25/2026</div>
+                    <div className="text-xs font-bold text-white">Message Admin Desk</div>
+                    <div className="text-[11px] text-neutral-400">Upload receipts & ask questions</div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-bold text-white font-mono-nums">- ₦150,000</div>
-                  <div className="text-[10px] text-neutral-400">Completed</div>
-                </div>
+                <ArrowUpRight className="w-4 h-4 text-neutral-400" />
+              </div>
+            </div>
+
+            {/* Card 5: Recent Activity */}
+            <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-3 shadow-xl">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-white">Recent Activity</h4>
+                <button
+                  type="button"
+                  onClick={() => showToast('Displaying full activity ledger.')}
+                  className="text-xs text-neutral-400 hover:text-white transition cursor-pointer"
+                >
+                  View All
+                </button>
               </div>
 
-              {userHistory.slice(1, 3).map((hist) => (
-                <div
-                  key={hist.id}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-black border border-neutral-800/80 text-xs"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-emerald-400 shrink-0">
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-white">{hist.sector.slice(0, 15)}...</div>
-                      <div className="text-[10px] text-neutral-500 font-mono-nums">{hist.dateAssisted}</div>
-                    </div>
+              <div className="space-y-2 pt-1">
+                {userHistory.length === 0 ? (
+                  <div className="p-3.5 rounded-xl bg-black border border-neutral-800 text-center text-neutral-400 text-xs">
+                    No assistance transactions yet. Pledge support to start your first cycle.
                   </div>
-                  <div className="text-right">
-                    <div className="font-bold text-white font-mono-nums">₦{hist.amount.toLocaleString()}</div>
-                    <div className="text-[10px] text-neutral-400">{hist.status}</div>
-                  </div>
-                </div>
-              ))}
+                ) : (
+                  userHistory.map((hist) => (
+                    <div
+                      key={hist.id}
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-black border border-neutral-800/80 text-xs"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-emerald-400 shrink-0">
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white">{hist.sector}</div>
+                          <div className="text-[10px] text-neutral-500 font-mono-nums">{hist.dateAssisted}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-white font-mono-nums">₦{hist.amount.toLocaleString()}</div>
+                        <div className="text-[10px] text-neutral-400">{hist.status}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
+
           </div>
 
         </div>
@@ -1058,7 +1212,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 </div>
               </div>
               <div className="text-2xl font-black text-white font-mono-nums">
-                2
+                {renderOrders.length + getOrders.length}
               </div>
               <div className="text-[11px] text-neutral-400">
                 Pending matches for Render Assistance / Get Assistance
@@ -1165,7 +1319,7 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                   MATURITY DATE
                 </span>
                 <div className="text-base font-bold text-white font-mono-nums">
-                  {investor.withdrawalDate || '22 Nov 2026'}
+                  {investor.withdrawalDate || (supportedCapital > 0 ? 'In 20 Days' : '—')}
                 </div>
               </div>
             </div>
@@ -1188,128 +1342,336 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             </div>
           </div>
 
-          {/* Card: MATCHED PAYMENT REQUIRED (Pitch Black Card with Emerald Accent) */}
-          <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-3 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
-                  <ArrowUpRight className="w-4 h-4" />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">
-                      MATCHED PAYMENT REQUIRED
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-amber-400 text-[10px] font-bold">
-                      Action Required
-                    </span>
+          {/* Card: MATCHED PAYMENT REQUIRED (Strictly only when actively matched to a peer) */}
+          {isReallyMatchedPay && activePayMatch && (
+            <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-4 shadow-xl">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-neutral-900 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 shadow-md">
+                    <ArrowUpRight className="w-5 h-5" />
                   </div>
-                  <h4 className="text-sm font-bold text-white leading-snug">
-                    You are matched to pay <span className="text-emerald-300">{activePayMatch.matchedWith?.investorName || 'Ugwuode Chukwuebuka Michael'}</span> <span className="font-mono-nums">₦{(activePayMatch.amount || 150000).toLocaleString()}</span>
-                  </h4>
-                  <p className="text-xs text-neutral-300 font-mono-nums">
-                    Bank: {activePayMatch.matchedWith?.bankDetails.bankName || 'OPay'} • Acc: {activePayMatch.matchedWith?.bankDetails.accountNumber || '8062675560'} • Tel: {activePayMatch.matchedWith?.phone || '08062675560'}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMatchedOrder(activePayMatch);
-                  setIsViewPayAccountOpen(true);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-lg shadow-black flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
-              >
-                <span>View Account to Pay</span>
-                <ArrowUpRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Card: PAYER MATCHED FOR PAYOUT (Pitch Black Card with Amber Accent) */}
-          <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-3 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
-                  <ArrowDownLeft className="w-4 h-4" />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
-                      PAYER MATCHED FOR PAYOUT
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-amber-400 text-[10px] font-bold">
-                      Paid
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-bold text-white leading-snug">
-                    <span className="text-amber-300">{activePayoutMatch.matchedWith?.investorName || 'OKORO CALISTUS KELECHI'}</span> is scheduled to pay you <span className="font-mono-nums">₦{(activePayoutMatch.amount || 100000).toLocaleString()}</span>
-                  </h4>
-                  <div className="flex items-center gap-2 text-xs text-neutral-400">
-                    <span>Payer Phone:</span>
-                    <span className="px-2 py-0.5 rounded bg-black border border-neutral-700 text-amber-300 font-mono font-bold text-xs">
-                      {activePayoutMatch.matchedWith?.phone || '08132662948'}
-                    </span>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        MATCHED PAYMENT REQUIRED
+                      </span>
+                      {activePayMatch.proofSubmitted || activePayMatch.status === 'PAYMENT_PENDING' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-600 text-emerald-300 text-[10px] font-bold">
+                          ✓ Proof Uploaded
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-950/60 border border-amber-600/60 text-amber-300 text-[10px] font-bold">
+                          Action Required: Pay & Upload Proof
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="text-sm sm:text-base font-bold text-white leading-snug">
+                      You are matched to pay <span className="text-emerald-300 font-extrabold">{activePayMatch.matchedWith?.investorName}</span> <span className="font-mono-nums font-black text-emerald-400">₦{(activePayMatch.amount || 0).toLocaleString()}</span>
+                    </h4>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-300 font-mono-nums">
+                      <span><strong className="text-neutral-400 font-sans">Bank:</strong> {activePayMatch.matchedWith?.bankDetails?.bankName}</span>
+                      <span><strong className="text-neutral-400 font-sans">Acc:</strong> <span className="font-bold text-white">{activePayMatch.matchedWith?.bankDetails?.accountNumber}</span></span>
+                      <span><strong className="text-neutral-400 font-sans">Tel:</strong> <span className="font-bold text-amber-300">{activePayMatch.matchedWith?.phone}</span></span>
+                    </div>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMatchedOrder(activePayMatch);
+                      setIsViewPayAccountOpen(true);
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-lg shadow-black flex items-center gap-1.5 cursor-pointer"
+                    title="View Full Recipient Bank Details & Upload Proof"
+                  >
+                    <span>{activePayMatch.proofSubmitted ? 'View Account / Re-upload Proof' : 'View Account to Pay & Upload Proof'}</span>
+                    <ArrowUpRight className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleOpenPeerChat(
+                        activePayMatch.id,
+                        activePayMatch.matchedWith?.investorId || '',
+                        activePayMatch.matchedWith?.investorName || 'Assistance Recipient',
+                        activePayMatch.matchedWith?.phone || '',
+                        'RECIPIENT',
+                        activePayMatch.amount || 0,
+                        activePayMatch.matchedWith?.bankDetails
+                      )
+                    }
+                    className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs transition shadow flex items-center gap-1.5 cursor-pointer"
+                    title="Direct In-App Chat with Recipient"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Chat Recipient</span>
+                  </button>
+
+                  <a
+                    href={getWhatsAppLink(
+                      activePayMatch.matchedWith?.phone || '',
+                      activePayMatch.matchedWith?.investorName || '',
+                      activePayMatch.amount || 0
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black font-extrabold text-xs transition shadow flex items-center gap-1.5 cursor-pointer"
+                    title="Chat Directly on WhatsApp"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>WhatsApp</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+
+                  <a
+                    href={getTelLink(activePayMatch.matchedWith?.phone || '')}
+                    className="px-3.5 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-amber-300 border border-amber-600/60 font-bold text-xs transition shadow flex items-center gap-1.5 cursor-pointer"
+                    title="Direct Phone Call"
+                  >
+                    <PhoneCall className="w-4 h-4 text-amber-400" />
+                    <span>Direct Call</span>
+                  </a>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap shrink-0 self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedMatchedOrder(activePayoutMatch);
-                    setIsViewPayerPhoneOpen(true);
-                  }}
-                  className="px-3.5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition shadow-md flex items-center gap-1 cursor-pointer"
-                >
-                  <span>View Payer Phone & Details</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </button>
+              {/* Uploaded Payment Proof Status Banner */}
+              {Boolean(activePayMatch.proofSubmitted || activePayMatch.status === 'PAYMENT_PENDING') && (
+                <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-600/70 text-xs space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-emerald-300 font-bold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Proof of Payment Uploaded ({activePayMatch.proofReceiptName || 'transfer_receipt.png'})</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachedReceiptFile({
+                          name: activePayMatch.proofReceiptName || 'transfer_receipt.png',
+                          size: '384 KB',
+                          type: 'image/png',
+                          previewUrl: activePayMatch.proofReceiptUrl || undefined,
+                          uploadedAt: activePayMatch.proofSubmittedAt || 'Uploaded',
+                        });
+                        setIsReceiptPreviewOpen(true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-emerald-600/60 hover:bg-emerald-900/60 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition self-start sm:self-auto cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>View Uploaded Proof</span>
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-neutral-300">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <strong>Admin Status:</strong> Awaiting Admin Approval to start 20-day growth progress
+                    </span>
+                    {activePayMatch.recipientConfirmed ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Recipient ({activePayMatch.matchedWith?.investorName}) has confirmed receiving payment to Admin!
+                      </span>
+                    ) : (
+                      <span className="text-neutral-400">
+                        • Recipient confirmation pending
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
-                <button
-                  type="button"
-                  onClick={() => handleConfirmReceived(activePayoutMatch.id)}
-                  className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-md flex items-center gap-1.5 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Confirm Assistance Received to Admin</span>
-                </button>
+          {/* Pending Render Assistance Waiting Match Notice */}
+          {pendingRenderOrder && !isReallyMatchedPay && (
+            <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-3 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                        Assistance Pledged • In Matching Queue
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-400 text-[10px] font-bold">
+                        Awaiting Match
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-white leading-snug">
+                      Your pledge of <span className="font-mono-nums text-emerald-400">₦{(pendingRenderOrder.amount || 0).toLocaleString()}</span> is queued for matching.
+                    </h4>
+                    <p className="text-xs text-neutral-400">
+                      The administrator is assigning an active agricultural cluster or beneficiary. Payment details will appear here as soon as you are matched.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Card: Grow Wealth Through Agriculture (Farm Base Club Official Emblem) */}
-          <div className="p-8 rounded-2xl bg-[#0a0a0a] border border-neutral-800 text-center space-y-4 shadow-xl">
-            <div className="flex justify-center">
-              <Logo size="lg" showText={false} theme="emerald" className="scale-110" />
-            </div>
+          {/* Card: PAYER MATCHED FOR PAYOUT (Strictly only when actively matched to a peer payer) */}
+          {isReallyMatchedPayout && activePayoutMatch && (
+            <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-3.5 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                    <ArrowDownLeft className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                        PAYER MATCHED FOR PAYOUT
+                      </span>
+                      {activePayoutMatch.recipientConfirmed ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-600 text-emerald-400 text-[10px] font-bold">
+                          ✓ Confirmed Received
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-amber-400 text-[10px] font-bold">
+                          Awaiting Confirmation
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="text-sm font-bold text-white leading-snug">
+                      <span className="text-amber-300">{activePayoutMatch.matchedWith?.investorName}</span> is scheduled to pay you <span className="font-mono-nums">₦{(activePayoutMatch.amount || 0).toLocaleString()}</span>
+                    </h4>
+                    <div className="flex items-center gap-2 text-xs text-neutral-400">
+                      <span>Payer Phone:</span>
+                      <span className="px-2 py-0.5 rounded bg-black border border-neutral-700 text-amber-300 font-mono font-bold text-xs">
+                        {activePayoutMatch.matchedWith?.phone}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold text-white tracking-wide">
-                Grow Wealth Through Agriculture
-              </h3>
-              <p className="text-xs text-neutral-400 max-w-xl mx-auto leading-relaxed">
-                Empowering rural and commercial farmers with financial sponsorship to increase production yields, mechanized equipment, and guarantee up to 20% dividend in a disciplined 20-day cycle for member
-              </p>
-            </div>
+                <div className="flex items-center gap-2 flex-wrap shrink-0 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMatchedOrder(activePayoutMatch);
+                      setIsViewPayerPhoneOpen(true);
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white font-bold text-xs transition shadow-md flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>View Payer Phone & Details</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
 
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-neutral-800 max-w-md mx-auto">
-              <div>
-                <div className="text-xl font-black text-amber-400 font-mono-nums">20%</div>
-                <div className="text-[10px] text-neutral-400 uppercase font-bold tracking-widest mt-0.5">MAX DIVIDEND</div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleOpenPeerChat(
+                        activePayoutMatch.id,
+                        activePayoutMatch.investorId,
+                        activePayoutMatch.investorName || 'Assistance Payer',
+                        activePayoutMatch.phone || '',
+                        'PAYER',
+                        activePayoutMatch.amount || 0,
+                        activePayoutMatch.bankDetails
+                      )
+                    }
+                    className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs transition shadow flex items-center gap-1.5 cursor-pointer"
+                    title="Direct In-App Chat with Payer"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Chat Payer</span>
+                  </button>
+
+                  {/* Button where who assistance is rendered to can confirm to the admin that he has received assistance */}
+                  {activePayoutMatch.recipientConfirmed ? (
+                    <div className="px-4 py-2.5 rounded-xl bg-emerald-950 border border-emerald-600 text-emerald-300 font-bold text-xs flex items-center gap-2 shadow-md">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>Assistance Received Confirmed to Admin</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmReceived(activePayoutMatch.id)}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-lg shadow-emerald-950/60 flex items-center gap-2 cursor-pointer animate-pulse"
+                      title="Click to notify Admin that you have received payment"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Confirm to Admin I Have Received Assistance</span>
+                    </button>
+                  )}
+                </div>
               </div>
-              <div>
-                <div className="text-xl font-black text-emerald-400 font-mono-nums">20 Days</div>
-                <div className="text-[10px] text-neutral-400 uppercase font-bold tracking-widest mt-0.5">GROWTH CYCLE</div>
-              </div>
-              <div>
-                <div className="text-xl font-black text-amber-400 font-mono-nums">100%</div>
-                <div className="text-[10px] text-neutral-400 uppercase font-bold tracking-widest mt-0.5">VERIFIED FARMS</div>
+
+              {/* Payer Proof Status & Lightbox Viewer for Recipient */}
+              {Boolean(
+                activePayoutMatch.proofSubmitted ||
+                activePayoutMatch.matchedWith?.proofSubmitted ||
+                activePayoutMatch.proofReceiptUrl ||
+                activePayoutMatch.matchedWith?.proofReceiptUrl
+              ) && (
+                <div className="p-3 rounded-xl bg-neutral-900/90 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-neutral-300">
+                    <FileCheck2 className="w-4 h-4 text-emerald-400" />
+                    <span>Payer uploaded payment proof:</span>
+                    <span className="font-mono text-emerald-300 font-bold">
+                      {activePayoutMatch.proofReceiptName || activePayoutMatch.matchedWith?.proofReceiptName || 'transfer_receipt.png'}
+                    </span>
+                    {(activePayoutMatch.proofNote || activePayoutMatch.matchedWith?.proofNote) && (
+                      <span className="text-amber-300">
+                        • Ref: {activePayoutMatch.proofNote || activePayoutMatch.matchedWith?.proofNote}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttachedReceiptFile({
+                        name: activePayoutMatch.proofReceiptName || activePayoutMatch.matchedWith?.proofReceiptName || 'payer_transfer_receipt.png',
+                        size: '384 KB',
+                        type: 'image/png',
+                        previewUrl: activePayoutMatch.proofReceiptUrl || activePayoutMatch.matchedWith?.proofReceiptUrl || undefined,
+                        uploadedAt: activePayoutMatch.proofSubmittedAt || activePayoutMatch.matchedWith?.proofSubmittedAt || 'Uploaded by Payer',
+                      });
+                      setIsReceiptPreviewOpen(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-black border border-emerald-600/70 text-emerald-300 font-semibold text-[11px] flex items-center gap-1 hover:bg-emerald-950 transition cursor-pointer self-start sm:self-auto"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View Payer's Receipt</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pending Get Assistance Awaiting Payer Match */}
+          {pendingGetOrder && !isReallyMatchedPayout && (
+            <div className="p-5 rounded-2xl bg-[#0a0a0a] border border-neutral-800 space-y-3 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-700 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                        Assistance Claim • In Queue
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-400 text-[10px] font-bold">
+                        Awaiting Payer Match
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-white leading-snug">
+                      Your demand of <span className="font-mono-nums text-amber-400">₦{(pendingGetOrder.amount || 0).toLocaleString()}</span> is queued for payout.
+                    </h4>
+                    <p className="text-xs text-neutral-400">
+                      A peer sponsor will be matched by the administrator to pay directly into your account.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
 
         </div>
 
@@ -1420,80 +1782,6 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
       )}
 
       {/* ======================================================== */}
-      {/* MODAL 2: Deposit NGN to Wallet                            */}
-      {/* ======================================================== */}
-      {isDepositOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md rounded-3xl bg-[#0a0a0a] border border-neutral-700 shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
-              <div className="flex items-center gap-2 text-white font-bold text-base">
-                <CreditCard className="w-5 h-5 text-amber-400" />
-                <span>Deposit NGN to User Wallet</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDepositOpen(false)}
-                className="text-neutral-400 hover:text-white transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleDepositSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Amount to Deposit (₦)</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 font-bold text-sm">₦</span>
-                  <input
-                    type="number"
-                    min="1000"
-                    step="500"
-                    required
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    className="w-full pl-8 pr-3.5 py-2.5 rounded-xl bg-black border border-neutral-700 text-white text-sm font-bold font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 flex-wrap">
-                {['10000', '30000', '50000', '100000', '150000'].map((amt) => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => setDepositAmount(amt)}
-                    className="px-3 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-xs font-mono text-neutral-300 hover:text-white transition"
-                  >
-                    ₦{parseInt(amt).toLocaleString()}
-                  </button>
-                ))}
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-black border border-neutral-800 text-[11px] text-neutral-400 leading-relaxed">
-                Funds deposited reflect immediately on your User Wallet for agricultural support allocation or peer settlement.
-              </div>
-
-              <div className="flex justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsDepositOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 font-semibold transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-md"
-                >
-                  Deposit Now
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
       {/* MODAL 3: Recipient Account Details for Support            */}
       {/* Shows Recipient Phone, WhatsApp Link & Direct Message     */}
       {/* ======================================================== */}
@@ -1515,66 +1803,123 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
             </div>
 
             {/* Recipient Account Details */}
-            <div className="p-4 rounded-2xl bg-black border border-neutral-800 space-y-3">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-neutral-400">Recipient Farmer / Member:</span>
-                <span className="font-bold text-white text-sm">
+            <div className="p-5 rounded-2xl bg-black border border-neutral-800 space-y-3.5">
+              <div className="flex justify-between items-center text-xs pb-2.5 border-b border-neutral-850">
+                <span className="text-neutral-400 font-semibold uppercase tracking-wider">Recipient Member:</span>
+                <span className="font-bold text-white text-sm sm:text-base flex items-center gap-1.5">
+                  <User className="w-4 h-4 text-emerald-400" />
                   {recipientName}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-neutral-400">Assigned Bank:</span>
-                <span className="font-bold text-emerald-400">
+              <div className="flex justify-between items-center text-xs pb-2.5 border-b border-neutral-850">
+                <span className="text-neutral-400 font-semibold uppercase tracking-wider">Assigned Bank:</span>
+                <span className="font-bold text-emerald-400 text-sm flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4" />
                   {recipientBank}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-neutral-400">Account Number:</span>
-                <span className="font-mono text-base font-black text-white select-all">
-                  {recipientAccountNo}
-                </span>
+              <div className="flex justify-between items-center text-xs pb-2.5 border-b border-neutral-850">
+                <span className="text-neutral-400 font-semibold uppercase tracking-wider">Account Number:</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-base sm:text-lg font-black text-white select-all tracking-wider">
+                    {recipientAccountNo}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyRecipientAccount(recipientAccountNo)}
+                    className="px-2 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                    title="Copy Account Number"
+                  >
+                    {copiedAccountNumber ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-neutral-400">Amount to Transfer:</span>
-                <span className="font-mono text-base font-black text-amber-400">
-                  ₦{matchAmount.toLocaleString()}
-                </span>
+              <div className="flex justify-between items-center text-xs pb-2.5 border-b border-neutral-850">
+                <span className="text-neutral-400 font-semibold uppercase tracking-wider">Amount to Transfer:</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-base sm:text-lg font-black text-amber-400">
+                    ₦{matchAmount.toLocaleString()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(matchAmount.toString());
+                      showToast('Transfer amount copied to clipboard!');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Recipient Phone Display */}
-              <div className="pt-2 border-t border-neutral-800 flex justify-between items-center text-xs">
-                <span className="text-neutral-400 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-amber-400" /> Recipient Phone Number:
+              {/* Recipient Phone Display with 1-click Copy */}
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-neutral-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-amber-400" /> Phone Number:
                 </span>
-                <a
-                  href={`tel:${recipientPhone}`}
-                  className="font-mono text-sm font-bold text-amber-300 px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700 hover:border-amber-500 transition"
-                >
-                  {recipientPhone}
-                </a>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-sm font-bold text-amber-300">
+                    {recipientPhone}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyRecipientPhone(recipientPhone)}
+                    className="px-2 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                    title="Copy Phone Number"
+                  >
+                    {copiedRecipientPhone ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Quick Contact & WhatsApp Direct Message Section */}
+            {/* Quick Contact: WhatsApp Direct & Direct Phone Call */}
             <div className="p-4 rounded-2xl bg-black border border-neutral-800 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <MessageCircle className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-white">Contact Recipient Directly</span>
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">Direct Recipient Communications</span>
                 </div>
-                <span className="text-[10px] text-neutral-400">WhatsApp or In-App</span>
+                <span className="text-[10px] text-emerald-400 font-semibold">Immediate Response</span>
               </div>
 
-              {/* WhatsApp Direct Action Button */}
-              <button
-                type="button"
-                onClick={() => handleOpenWhatsApp(recipientPhone, recipientName, matchAmount)}
-                className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>Chat Directly on WhatsApp ({recipientPhone})</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
+              {/* Two Prominent Action Buttons: WhatsApp & Direct Call */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <a
+                  href={getWhatsAppLink(recipientPhone, recipientName, matchAmount)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black font-extrabold text-xs transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4 fill-black/20" />
+                  <span>Chat on WhatsApp</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+
+                <a
+                  href={getTelLink(recipientPhone)}
+                  className="py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <PhoneCall className="w-4 h-4 text-black" />
+                  <span>Direct Phone Call</span>
+                </a>
+              </div>
 
               {/* In-App Message to Recipient's Dashboard */}
               <div className="pt-2 border-t border-neutral-850 space-y-2">
@@ -1818,15 +2163,45 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               >
                 Close
               </button>
+              {activePayMatch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleOpenPeerChat(
+                      activePayMatch.id,
+                      activePayMatch.matchedWith?.investorId || '',
+                      activePayMatch.matchedWith?.investorName || 'Assistance Recipient',
+                      activePayMatch.matchedWith?.phone || '',
+                      'RECIPIENT',
+                      activePayMatch.amount || 0,
+                      activePayMatch.matchedWith?.bankDetails
+                    );
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition shadow-md text-center cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Chat Recipient</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
+                  const receiptUrl = attachedReceiptFile?.previewUrl || '';
+                  const receiptName = attachedReceiptFile?.name || 'transfer_receipt.png';
+                  if (activePayMatch && onSubmitProofOfPayment) {
+                    onSubmitProofOfPayment(activePayMatch.id, {
+                      receiptUrl,
+                      receiptName,
+                      note: proofNote,
+                    });
+                  }
                   setIsViewPayAccountOpen(false);
-                  showToast('Payment proof submitted to Admin for rapid verification!');
+                  showToast('Payment proof submitted to Admin! 20-day growth will start once approved.');
                 }}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-md shadow-emerald-950/40 text-center cursor-pointer"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-md shadow-emerald-950/40 text-center cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Submit Payment Confirmation
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Submit Payment Proof to Admin</span>
               </button>
             </div>
           </div>
@@ -1969,19 +2344,19 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
               <div className="flex justify-between items-center">
                 <span className="text-neutral-400">Assigned Payer Name:</span>
                 <span className="font-bold text-white text-sm">
-                  {selectedMatchedOrder?.matchedWith?.investorName || 'OKORO CALISTUS KELECHI'}
+                  {selectedMatchedOrder?.matchedWith?.investorName || 'Assigned Payer'}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-neutral-400">Expected Payout Amount:</span>
                 <span className="font-mono text-base font-black text-amber-400">
-                  ₦{(selectedMatchedOrder?.amount || 100000).toLocaleString()}
+                  ₦{(selectedMatchedOrder?.amount || 0).toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-neutral-400">Payer Telephone:</span>
                 <span className="px-2.5 py-1 rounded bg-neutral-900 border border-neutral-700 text-amber-300 font-mono font-bold text-sm">
-                  {selectedMatchedOrder?.matchedWith?.phone || '08132662948'}
+                  {selectedMatchedOrder?.matchedWith?.phone || 'Contact via Admin Desk'}
                 </span>
               </div>
             </div>
@@ -2217,9 +2592,165 @@ export const InvestorDashboard: React.FC<InvestorDashboardProps> = ({
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-lg flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm Withdrawal & Wipe Bonus History</span>
+                <span>Submit Withdrawal Request to Admin</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* PEER IN-APP CHAT MODAL: Chat directly with recipient     */}
+      {/* ======================================================== */}
+      {isPeerChatOpen && chatCounterparty && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-lg rounded-3xl bg-[#0c0c0c] border border-neutral-700 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Chat Header */}
+            <div className="p-4 sm:p-5 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-md">
+                  {chatCounterparty.counterpartyName.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm sm:text-base font-bold text-white truncate">
+                      {chatCounterparty.counterpartyName}
+                    </h4>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-800 font-bold shrink-0">
+                      {chatCounterparty.counterpartyRole === 'RECIPIENT' ? 'Recipient' : 'Payer'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-neutral-400 flex items-center gap-2 font-mono truncate">
+                    <span>{chatCounterparty.counterpartyPhone}</span>
+                    {chatCounterparty.amount && (
+                      <span className="text-emerald-400 font-bold">• ₦{chatCounterparty.amount.toLocaleString()}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Connect & Close Header Actions */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <a
+                  href={getWhatsAppLink(chatCounterparty.counterpartyPhone, chatCounterparty.counterpartyName, chatCounterparty.amount || 0)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-black transition shadow cursor-pointer"
+                  title="WhatsApp"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                </a>
+                <a
+                  href={getTelLink(chatCounterparty.counterpartyPhone)}
+                  className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-amber-300 border border-amber-600/40 transition shadow cursor-pointer"
+                  title="Direct Call"
+                >
+                  <PhoneCall className="w-4 h-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsPeerChatOpen(false)}
+                  className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Recipient Bank Details Banner in Chat */}
+            {chatCounterparty.bankDetails && (
+              <div className="px-4 py-2 bg-black border-b border-neutral-900 text-[11px] text-neutral-300 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-neutral-500">Bank: </span>
+                  <strong className="text-white">{chatCounterparty.bankDetails.bankName}</strong>
+                  <span className="text-neutral-500 ml-2">Acc: </span>
+                  <strong className="text-emerald-400 font-mono">{chatCounterparty.bankDetails.accountNumber}</strong>
+                </div>
+                <div className="text-neutral-400 font-medium">{chatCounterparty.bankDetails.accountName}</div>
+              </div>
+            )}
+
+            {/* Chat Messages Log */}
+            <div className="flex-1 p-4 overflow-y-auto space-y-3 min-h-[220px] max-h-[360px] bg-black/60">
+              {chatMessages.length === 0 ? (
+                <div className="py-12 text-center text-xs text-neutral-500">
+                  No messages yet. Send a message to coordinate payment.
+                </div>
+              ) : (
+                chatMessages.map((msg) => {
+                  const isMe = msg.senderId === investor.id;
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} space-y-1`}
+                    >
+                      <div className="text-[10px] text-neutral-500 font-medium px-1 flex items-center gap-1.5">
+                        <span>{isMe ? 'You' : msg.senderName}</span>
+                        <span>•</span>
+                        <span>{msg.timestamp}</span>
+                      </div>
+                      <div
+                        className={`p-3 rounded-2xl max-w-[85%] text-xs leading-relaxed ${
+                          isMe
+                            ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-tr-none shadow-md'
+                            : 'bg-neutral-800 text-neutral-100 rounded-tl-none border border-neutral-700'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Fast Reply Quick Chips */}
+            <div className="px-3 py-2 bg-neutral-950 border-t border-neutral-900 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {[
+                '👋 Hello! Preparing your payment now',
+                '💳 Please confirm your bank details are active',
+                '✅ Transfer completed from my bank app',
+                '📸 Proof of payment uploaded, please confirm',
+                '🙏 Please notify Admin once credited',
+              ].map((chip, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSendPeerChatMessage(chip)}
+                  className="px-2.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-[11px] text-neutral-300 whitespace-nowrap shrink-0 transition cursor-pointer"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+
+            {/* Chat Input & Send */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendPeerChatMessage();
+              }}
+              className="p-3 bg-neutral-900 border-t border-neutral-800 flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={chatInputText}
+                onChange={(e) => setChatInputText(e.target.value)}
+                placeholder={`Message ${chatCounterparty.counterpartyName}...`}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-black border border-neutral-700 text-white text-xs focus:outline-none focus:border-emerald-500 transition"
+              />
+              <button
+                type="submit"
+                disabled={!chatInputText.trim()}
+                className={`p-2.5 rounded-xl transition flex items-center justify-center ${
+                  chatInputText.trim()
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md cursor-pointer'
+                    : 'bg-neutral-800 text-neutral-600 cursor-not-allowed'
+                }`}
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
           </div>
         </div>
       )}

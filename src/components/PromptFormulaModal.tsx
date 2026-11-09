@@ -17,7 +17,7 @@ You are a Principal Full-Stack FinTech & Agro-Tech Software Architect specializi
 - **Platform Administrators**: Super-administrators managing assistance matching, dividend cycles, fraud prevention, and user communications.
 
 #### 3. GOAL
-Design and engineer a simple, non-ambiguous, highly reliable 3-page Agricultural Assistance Web Application for **FARM BASE CLUB**. The platform enables investors to register with their complete identity and bank details, track their assistance dividend progress on a visual percentage commitment bar, offer funding through "Render Assistance", demand returns through "Get Assistance", and receive direct dashboard communications from an Admin Console protected by the password "BaseClube2026".
+Design and engineer a simple, non-ambiguous, highly reliable 3-page Agricultural Assistance Web Application for **FARM BASE CLUB**. The platform enables investors to register with their complete identity and bank details, track their assistance dividend progress on a visual percentage commitment bar, offer funding through "Render Assistance", demand returns through "Get Assistance", and receive direct dashboard communications from an Admin Console protected by authorized administrative credentials.
 
 #### 4. STYLE & OUTPUT SPECIFICATIONS
 - **Visual Design Identity**:
@@ -58,10 +58,10 @@ Design and engineer a simple, non-ambiguous, highly reliable 3-page Agricultural
   * **Admin Direct Message Banner**: Prominently displayed broadcast or personalized alert dropped by management.
   * **Admin Restriction Indicators**: Status notices if dividend progress is paused or if withdrawals are temporarily locked.
 
-##### C. Page 3: Admin Dashboard (Protected by password "BaseClube2026")
+##### C. Page 3: Admin Dashboard (Protected by Authorized Admin Authentication)
 - **Access Protocol**:
   * Reached via an Admin Dashboard icon button in the header.
-  * Secure modal requiring the password "BaseClube2026" to access management tools.
+  * Secure modal requiring authorized credentials to access management tools.
 - **Supervisory Controls**:
   1. **Pause / Resume Dividend Progress**: Global and per-investor toggle switch to pause or resume dividend accumulation percentage.
   2. **Stop User from Withdrawing / Unlock Withdrawals**: Lock switch preventing investors from initiating "Get Assistance" claims with custom system reason.
@@ -159,7 +159,7 @@ export const PromptFormulaModal: React.FC<PromptFormulaModalProps> = ({ isOpen, 
             <section className="p-4 rounded-lg bg-neutral-900/60 border border-neutral-800">
               <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest">3. GOAL</span>
               <p className="mt-1 text-neutral-200">
-                Build a simple, non-ambiguous, professional 3-page web platform for FARM BASE CLUB where investors register with email, phone, and bank details, monitor their dividend percentage commitment bar, execute "Render Assistance" (offer to pay) and "Get Assistance" (demand payment), with full administrative control via password "BaseClube2026".
+                Build a simple, non-ambiguous, professional 3-page web platform for FARM BASE CLUB where investors register with email, phone, and bank details, monitor their dividend percentage commitment bar, execute "Render Assistance" (offer to pay) and "Get Assistance" (demand payment), with full administrative control via authorized administrative credentials.
               </p>
             </section>
 
@@ -190,7 +190,7 @@ export const PromptFormulaModal: React.FC<PromptFormulaModalProps> = ({ isOpen, 
                   <p className="text-neutral-400 mt-0.5">"Render Assistance" (offer to pay) & "Get Assistance" (demand payment) workflows.</p>
                 </div>
                 <div className="p-2.5 rounded bg-black border border-neutral-800">
-                  <h4 className="font-semibold text-emerald-400">Admin Console ("BaseClube2026")</h4>
+                  <h4 className="font-semibold text-emerald-400">Admin Console</h4>
                   <p className="text-neutral-400 mt-0.5">Dedicated admin icon, pause dividend progress, stop user withdrawals, drop direct dashboard messages, match assist orders.</p>
                 </div>
               </div>

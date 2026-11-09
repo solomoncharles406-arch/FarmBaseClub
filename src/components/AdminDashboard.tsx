@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Investor, AssistanceOrder, AdminControls, ContactInquiry } from '../types';
+import { Investor, AssistanceOrder, AdminControls, ContactInquiry, LiveAssistanceActivity, ReferralWithdrawalRequest } from '../types';
+import { UploadLandingFeedModal } from './UploadLandingFeedModal';
 import {
   ShieldCheck,
   Pause,
@@ -37,6 +38,10 @@ import {
   Plus,
   Megaphone,
   Bell,
+  UploadCloud,
+  FileCheck2,
+  X,
+  FileText,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -44,6 +49,11 @@ interface AdminDashboardProps {
   assistanceOrders: AssistanceOrder[];
   adminControls: AdminControls;
   contactInquiries?: ContactInquiry[];
+  liveActivities?: LiveAssistanceActivity[];
+  referralWithdrawalRequests?: ReferralWithdrawalRequest[];
+  onApproveReferralWithdrawal?: (requestId: string) => void;
+  onRejectReferralWithdrawal?: (requestId: string, reason?: string) => void;
+  onUpdateLiveActivities?: (activities: LiveAssistanceActivity[]) => void;
   onUpdateAdminControls: (controls: Partial<AdminControls>) => void;
   onToggleUserDividendPause: (investorId: string) => void;
   onToggleUserWithdrawalLock: (investorId: string) => void;
@@ -73,6 +83,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   assistanceOrders,
   adminControls,
   contactInquiries = [],
+  liveActivities = [],
+  referralWithdrawalRequests = [],
+  onApproveReferralWithdrawal,
+  onRejectReferralWithdrawal,
+  onUpdateLiveActivities,
   onUpdateAdminControls,
   onToggleUserDividendPause,
   onToggleUserWithdrawalLock,
@@ -91,6 +106,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onCreatePeerMatch,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'matching' | 'mailbox' | 'payouts' | 'users'>('overview');
+  const [isUploadFeedOpen, setIsUploadFeedOpen] = useState(false);
 
   // Peer-to-Peer Account Matching Desk state (matching Screenshot_2026-10-27_162714_5c5cc47b.png)
   const [selectedSupporterId, setSelectedSupporterId] = useState<string>('');
@@ -127,6 +143,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Permanent Account Deletion State
   const [investorToDelete, setInvestorToDelete] = useState<Investor | null>(null);
+
+  // Admin Proof of Payment Lightbox Preview State
+  const [selectedProofPreview, setSelectedProofPreview] = useState<{
+    orderId: string;
+    receiptUrl?: string;
+    receiptName?: string;
+    note?: string;
+    payerName?: string;
+    recipientName?: string;
+    amount?: number;
+    date?: string;
+    recipientConfirmed?: boolean;
+    payerPhone?: string;
+    recipientPhone?: string;
+    bankName?: string;
+    accountNumber?: string;
+  } | null>(null);
 
   // Quick system notice state & feedback
   const [systemNoticeInput, setSystemNoticeInput] = useState(adminControls.systemNotice || '');
@@ -222,7 +255,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const pendingRender = renderOrders.filter((o) => o.status === 'WAITING_MATCH');
   const pendingGet = getOrders.filter((o) => o.status === 'WAITING_MATCH');
   const matchedOrders = assistanceOrders.filter((o) => o.status === 'MATCHED' || o.status === 'PAYMENT_PENDING');
+  const proofPendingOrders = assistanceOrders.filter(
+    (o) =>
+      o.status !== 'CONFIRMED' &&
+      !o.adminApproved &&
+      Boolean(
+        o.proofSubmitted ||
+        o.matchedWith?.proofSubmitted ||
+        o.status === 'PAYMENT_PENDING' ||
+        o.proofReceiptUrl ||
+        o.matchedWith?.proofReceiptUrl
+      )
+  );
   const pendingApprovalCount = investors.filter((inv) => inv.status === 'PENDING').length;
+  const pendingReferrals = referralWithdrawalRequests.filter((r) => r.status === 'PENDING');
 
   // Safe Platform Balance calculation - NEVER NaN
   const platformBalance = investors.reduce((sum, inv) => sum + (Number(inv.activeAssistance) || 0), 0);
@@ -305,7 +351,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   Administrator Super-Console
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono font-bold">
-                  AUTHENTICATED · BaseClube2026
+                  AUTHENTICATED · SECURE SESSION
                 </span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-black text-white">
@@ -315,6 +361,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsUploadFeedOpen(true)}
+              className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 border border-emerald-500 rounded-xl transition flex items-center gap-2 shadow-lg shadow-emerald-950/60 cursor-pointer"
+              title="Upload and manage custom names and amounts for the landing page movable feed"
+            >
+              <UploadCloud className="w-4 h-4 text-white" />
+              <span>Upload Landing Names & Amounts</span>
+            </button>
+
             <button
               onClick={onExitAdmin}
               className="px-4 py-2 text-xs font-bold text-neutral-300 hover:text-white bg-black hover:bg-neutral-900 border border-neutral-800 rounded-xl transition flex items-center gap-1.5 shrink-0"
@@ -481,14 +537,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex items-center gap-2 sm:gap-3 pt-2 overflow-x-auto no-scrollbar pb-1">
           {[
             { id: 'overview' as const, label: 'Overview & Financials', icon: Layers },
-            { id: 'matching' as const, label: 'Peer Matching Desk', icon: Users, badge: `${pendingRender.length}` },
+            {
+              id: 'matching' as const,
+              label: 'Peer Matching & Proofs',
+              icon: Users,
+              badge: proofPendingOrders.length > 0 ? `${proofPendingOrders.length} Proofs` : (pendingRender.length > 0 ? `${pendingRender.length} New` : undefined),
+            },
             {
               id: 'mailbox' as const,
               label: 'User Inquiries & Chat',
               icon: MessageSquare,
               badge: contactInquiries.filter((inq) => !inq.read).length ? `${contactInquiries.filter((inq) => !inq.read).length}` : undefined,
             },
-            { id: 'payouts' as const, label: `Pending Payouts (${pendingGet.length})`, icon: ArrowUpRight },
+            {
+              id: 'payouts' as const,
+              label: `Pending Payouts (${pendingGet.length + pendingReferrals.length})`,
+              icon: ArrowUpRight,
+              badge: pendingReferrals.length > 0 ? `${pendingReferrals.length} Bonus Req` : undefined,
+            },
             {
               id: 'users' as const,
               label: `Registered Users (${investors.length})`,
@@ -522,6 +588,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* TAB 1: Overview & Financials (Screenshot 1) */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+
+          {/* Landing Page Movable Names Action Banner */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#07130b] via-[#091a0e] to-[#06120a] border border-emerald-800/80 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-950 border border-emerald-600/70 text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
+                <UploadCloud className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm sm:text-base font-black text-white">
+                    Landing Page Movable Names & Amounts Feed
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/60">
+                    Live Ticker
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-300 mt-0.5">
+                  {(liveActivities || []).length} peer names & amounts actively scrolling on the public homepage. Upload CSV/text or add custom names independently from registered accounts.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsUploadFeedOpen(true)}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition shadow-lg shadow-emerald-950/60 flex items-center gap-2 shrink-0 cursor-pointer"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>Upload & Manage Names</span>
+            </button>
+          </div>
           
           {/* Top 4 Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -638,7 +735,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-900/60">
-                    {farmSupportList.map((item) => (
+                    {farmSupportList.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-neutral-500 text-xs">
+                          No active render assistance pledges currently.
+                        </td>
+                      </tr>
+                    ) : (
+                      farmSupportList.map((item) => (
                       <tr key={item.id} className="hover:bg-neutral-900/30">
                         <td className="py-3.5 pr-3">
                           <div className="font-bold text-white text-sm">{item.name}</div>
@@ -687,7 +791,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           )}
                         </td>
                       </tr>
-                    ))}
+                    )))}
                   </tbody>
                 </table>
               </div>
@@ -884,6 +988,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               );
             })}
+
+            {filteredInvestors.length === 0 && (
+              <div className="py-12 text-center space-y-2 border border-dashed border-neutral-800 rounded-2xl bg-black">
+                <Users className="w-10 h-10 text-neutral-600 mx-auto" />
+                <p className="text-sm font-semibold text-neutral-300">No registered accounts</p>
+                <p className="text-xs text-neutral-500">All recent dummy accounts have been cleared. Newly registered users will appear here.</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1103,6 +1215,127 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </form>
 
+          {/* Payment Proofs & Verifications Awaiting Admin Review */}
+          {proofPendingOrders.length > 0 && (
+            <div className="p-6 rounded-2xl bg-[#09150d] border-2 border-emerald-500/70 shadow-2xl space-y-4 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-900/60">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-500 flex items-center justify-center text-emerald-400">
+                    <FileCheck2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-bold text-white">Payment Proofs Awaiting Verification</h4>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-black text-xs font-black">
+                        {proofPendingOrders.length} Ready
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-300/80">
+                      View uploaded receipts and approve to immediately start the user's 20-day growth progress.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {proofPendingOrders.map((ord) => {
+                  const payer = ord.type === 'RENDER' ? ord.investorName : ord.matchedWith?.investorName || '';
+                  const payerPhone = ord.type === 'RENDER' ? ord.phone : ord.matchedWith?.phone || '';
+                  const recipient = ord.type === 'GET' ? ord.investorName : ord.matchedWith?.investorName || '';
+                  const bank = ord.bankDetails.bankName;
+                  const accNo = ord.bankDetails.accountNumber;
+                  const accName = ord.bankDetails.accountName;
+                  const isRecipientConfirmed = Boolean(ord.recipientConfirmed || ord.matchedWith?.recipientConfirmed);
+                  const proofImg = ord.proofReceiptUrl || ord.matchedWith?.proofReceiptUrl;
+                  const proofFileName = ord.proofReceiptName || ord.matchedWith?.proofReceiptName || 'transfer_receipt.png';
+                  const proofNoteText = ord.proofNote || ord.matchedWith?.proofNote || ord.proofOfPaymentNote;
+
+                  return (
+                    <div key={ord.id} className="p-4 rounded-xl bg-black border border-emerald-800/80 space-y-3 shadow-lg">
+                      <div className="flex items-center justify-between pb-2 border-b border-neutral-850">
+                        <span className="font-mono text-xs text-neutral-400">Order: {ord.id}</span>
+                        <span className="font-mono text-base font-black text-emerald-400">₦{ord.amount.toLocaleString()}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-neutral-500 block">Payer (Growth will start):</span>
+                          <span className="font-bold text-white">{payer}</span>
+                          <p className="font-mono text-[11px] text-neutral-400">{payerPhone}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-neutral-500 block">Demanding Recipient:</span>
+                          <span className="font-bold text-white">{recipient}</span>
+                          <p className="text-[11px] text-neutral-400 truncate">{bank} - {accNo}</p>
+                        </div>
+                      </div>
+
+                      {/* Recipient Confirmation Pill */}
+                      <div className="flex items-center justify-between text-xs pt-1">
+                        <span className="text-[11px] text-neutral-400">Recipient Confirmation:</span>
+                        {isRecipientConfirmed ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600 text-[10px] font-bold flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Confirmed Received
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-700 text-[10px] font-bold flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-amber-400" /> Confirmation Pending
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Proof Thumbnail & Note */}
+                      <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-white truncate">{proofFileName}</p>
+                            {proofNoteText && <p className="text-[10px] text-amber-300 truncate font-mono">Ref: {proofNoteText}</p>}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProofPreview({
+                            orderId: ord.id,
+                            receiptUrl: proofImg,
+                            receiptName: proofFileName,
+                            note: proofNoteText,
+                            payerName: payer,
+                            recipientName: recipient,
+                            amount: ord.amount,
+                            date: ord.proofSubmittedAt || ord.matchedWith?.proofSubmittedAt,
+                            recipientConfirmed: isRecipientConfirmed,
+                            payerPhone,
+                            bankName: bank,
+                            accountNumber: accNo,
+                          })}
+                          className="px-2.5 py-1 rounded bg-black hover:bg-neutral-800 border border-neutral-700 hover:border-emerald-500 text-xs text-emerald-300 font-semibold flex items-center gap-1 transition cursor-pointer shrink-0"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Inspect Receipt</span>
+                        </button>
+                      </div>
+
+                      {/* Primary Admin Approval Action */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onConfirmAssistanceSettlement(ord.id);
+                          setAdminToast(`Approved! ${payer}'s 20-day growth progress is now active and counting.`);
+                          setTimeout(() => setAdminToast(null), 4000);
+                        }}
+                        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-950/50 flex items-center justify-center gap-2 transition cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Approve Payment Proof & Start Growth Progress</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Active Matched Assignments */}
           <div className="p-6 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-4">
             <h4 className="text-base font-bold text-white">Active Matched Assignments</h4>
@@ -1115,6 +1348,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <th className="py-2.5 px-3">Demanding Recipient (Get)</th>
                     <th className="py-2.5 px-3">Amount</th>
                     <th className="py-2.5 px-3">Beneficiary Bank Details</th>
+                    <th className="py-2.5 px-3">Proof of Payment</th>
+                    <th className="py-2.5 px-3">Recipient Confirmed?</th>
                     <th className="py-2.5 px-3">Payment Status</th>
                     <th className="py-2.5 px-3">Admin Action</th>
                   </tr>
@@ -1122,39 +1357,105 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <tbody className="divide-y divide-neutral-900 font-mono-nums">
                   {matchedOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-xs text-neutral-500">
+                      <td colSpan={9} className="py-8 text-center text-xs text-neutral-500">
                         No active matched assignments awaiting confirmation.
                       </td>
                     </tr>
                   ) : (
-                    matchedOrders.map((ord) => (
-                      <tr key={ord.id} className="hover:bg-neutral-900/30">
-                        <td className="py-3 px-3 text-neutral-300 font-mono">{ord.id}</td>
-                        <td className="py-3 px-3 text-emerald-400 font-sans font-bold">
-                          {ord.matchedWith?.investorName || ord.investorName}
-                        </td>
-                        <td className="py-3 px-3 text-white font-sans font-medium">
-                          {ord.type === 'GET' ? ord.investorName : ord.matchedWith?.investorName}
-                        </td>
-                        <td className="py-3 px-3 font-bold text-white">₦{ord.amount.toLocaleString()}</td>
-                        <td className="py-3 px-3 text-neutral-300 font-sans">
-                          {ord.bankDetails.bankName} - {ord.bankDetails.accountNumber} ({ord.bankDetails.accountName})
-                        </td>
-                        <td className="py-3 px-3 font-sans">
-                          <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
-                            Matched & Active
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 font-sans">
-                          <button
-                            onClick={() => onConfirmAssistanceSettlement(ord.id)}
-                            className="px-3 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition"
-                          >
-                            Confirm Paid & Release
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    matchedOrders.map((ord) => {
+                      const payer = ord.type === 'RENDER' ? ord.investorName : ord.matchedWith?.investorName || '';
+                      const payerPhone = ord.type === 'RENDER' ? ord.phone : ord.matchedWith?.phone || '';
+                      const recipient = ord.type === 'GET' ? ord.investorName : ord.matchedWith?.investorName || '';
+                      const isConfirmed = ord.status === 'CONFIRMED' || Boolean(ord.adminApproved);
+                      const isRecipientConfirmed = Boolean(ord.recipientConfirmed || ord.matchedWith?.recipientConfirmed);
+                      const hasProof = Boolean(ord.proofSubmitted || ord.matchedWith?.proofSubmitted || ord.proofReceiptUrl || ord.matchedWith?.proofReceiptUrl);
+                      const proofImg = ord.proofReceiptUrl || ord.matchedWith?.proofReceiptUrl;
+                      const proofFileName = ord.proofReceiptName || ord.matchedWith?.proofReceiptName || 'transfer_receipt.png';
+                      const proofNoteText = ord.proofNote || ord.matchedWith?.proofNote || ord.proofOfPaymentNote;
+
+                      return (
+                        <tr key={ord.id} className="hover:bg-neutral-900/30">
+                          <td className="py-3 px-3 text-neutral-300 font-mono">{ord.id}</td>
+                          <td className="py-3 px-3 text-emerald-400 font-sans font-bold">
+                            {payer}
+                          </td>
+                          <td className="py-3 px-3 text-white font-sans font-medium">
+                            {recipient}
+                          </td>
+                          <td className="py-3 px-3 font-bold text-white">₦{ord.amount.toLocaleString()}</td>
+                          <td className="py-3 px-3 text-neutral-300 font-sans">
+                            {ord.bankDetails.bankName} - {ord.bankDetails.accountNumber} ({ord.bankDetails.accountName})
+                          </td>
+                          <td className="py-3 px-3 font-sans">
+                            {hasProof ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProofPreview({
+                                  orderId: ord.id,
+                                  receiptUrl: proofImg,
+                                  receiptName: proofFileName,
+                                  note: proofNoteText,
+                                  payerName: payer,
+                                  recipientName: recipient,
+                                  amount: ord.amount,
+                                  date: ord.proofSubmittedAt || ord.matchedWith?.proofSubmittedAt,
+                                  recipientConfirmed: isRecipientConfirmed,
+                                  payerPhone,
+                                  bankName: ord.bankDetails.bankName,
+                                  accountNumber: ord.bankDetails.accountNumber,
+                                })}
+                                className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-emerald-600/70 text-emerald-300 hover:bg-emerald-950 transition text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>View Receipt</span>
+                              </button>
+                            ) : (
+                              <span className="text-neutral-500 text-[11px] italic">No proof yet</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 font-sans">
+                            {isRecipientConfirmed ? (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 text-[10px] font-bold inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Confirmed
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-950/70 text-amber-400 border border-amber-800 text-[10px] font-bold inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-amber-400" /> Pending
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 font-sans">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              isConfirmed
+                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                : 'bg-amber-950 text-amber-400 border border-amber-800'
+                            }`}>
+                              {isConfirmed ? 'Settled & Active' : (hasProof ? 'Proof Uploaded' : 'Matched & Active')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-sans">
+                            {isConfirmed ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-700 text-[11px] font-bold">
+                                ✓ Approved & Growing
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onConfirmAssistanceSettlement(ord.id);
+                                  setAdminToast(`Approved! ${payer}'s 20-day growth progress is now active and counting.`);
+                                  setTimeout(() => setAdminToast(null), 4000);
+                                }}
+                                className="px-3 py-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition shadow-md flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Approve Proof & Start Growth</span>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1334,67 +1635,189 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 5: Pending Payouts */}
+      {/* TAB 5: Pending Payouts & Referral Bonus Requests */}
       {activeTab === 'payouts' && (
-        <div className="p-6 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-4">
-          <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
-            <div>
-              <h3 className="text-xl font-bold text-white">Pending Payout Claims (Get Assistance)</h3>
-              <p className="text-xs text-neutral-400 mt-0.5">Claims submitted after 20-day maturity waiting for settlement</p>
+        <div className="space-y-6">
+          {/* Card 1: Referral Bonus Withdrawal Requests (Admin Approval Required) */}
+          <div className="p-6 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-neutral-800">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2 flex-wrap">
+                  <span>Referral Bonus Withdrawal Requests</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono font-bold">
+                    Admin Approval Required
+                  </span>
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Approve or decline member requests to withdraw accrued referral earnings to their registered bank accounts
+                </p>
+              </div>
+              <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border self-start sm:self-auto ${
+                pendingReferrals.length > 0
+                  ? 'text-amber-400 bg-amber-950/40 border-amber-800'
+                  : 'text-neutral-400 bg-neutral-900 border-neutral-800'
+              }`}>
+                {pendingReferrals.length} Pending Approval
+              </span>
             </div>
-            <span className="text-xs font-bold text-amber-400 bg-amber-950/40 border border-amber-800 px-3 py-1.5 rounded-lg">
-              {pendingGet.length} Pending
-            </span>
+
+            {referralWithdrawalRequests.length === 0 ? (
+              <div className="py-12 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto opacity-70" />
+                <div className="text-sm font-bold text-white">No Referral Bonus Withdrawal Requests</div>
+                <div className="text-xs text-neutral-400">When members submit withdrawal requests for referral earnings, they will appear here for admin review and disbursement.</div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-neutral-800 text-neutral-400 uppercase tracking-wider font-semibold">
+                      <th className="py-3 px-3">Request ID</th>
+                      <th className="py-3 px-3">Member</th>
+                      <th className="py-3 px-3">Phone</th>
+                      <th className="py-3 px-3">Bank Details</th>
+                      <th className="py-3 px-3">Amount</th>
+                      <th className="py-3 px-3">Date</th>
+                      <th className="py-3 px-3">Status</th>
+                      <th className="py-3 px-3 text-right">Admin Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-900">
+                    {referralWithdrawalRequests.map((req) => (
+                      <tr key={req.id} className="hover:bg-neutral-900/30">
+                        <td className="py-3 px-3 font-mono text-neutral-400 text-[11px]">{req.id}</td>
+                        <td className="py-3 px-3 font-bold text-white">{req.investorName}</td>
+                        <td className="py-3 px-3 font-mono text-amber-300">{req.phone}</td>
+                        <td className="py-3 px-3 text-neutral-300">
+                          <div className="font-semibold text-white">{req.bankDetails?.bankName}</div>
+                          <div className="font-mono text-emerald-400">{req.bankDetails?.accountNumber}</div>
+                          <div className="text-[10px] text-neutral-400">{req.bankDetails?.accountName}</div>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-black text-emerald-400 text-sm">
+                          ₦{req.amount.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-neutral-400 font-mono text-[11px]">
+                          {req.createdAt ? new Date(req.createdAt).toLocaleDateString() : 'Recent'}
+                        </td>
+                        <td className="py-3 px-3">
+                          {req.status === 'PENDING' ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700 flex items-center gap-1 w-fit">
+                              <Clock className="w-3 h-3" /> Pending Admin
+                            </span>
+                          ) : req.status === 'APPROVED' ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700 flex items-center gap-1 w-fit">
+                              <CheckCircle2 className="w-3 h-3" /> Approved & Paid
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-950 text-red-300 border border-red-700 flex items-center gap-1 w-fit">
+                              <Ban className="w-3 h-3" /> Declined
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          {req.status === 'PENDING' ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (onApproveReferralWithdrawal) {
+                                    onApproveReferralWithdrawal(req.id);
+                                    setAdminToast(`Referral bonus withdrawal of ₦${req.amount.toLocaleString()} for ${req.investorName} has been APPROVED!`);
+                                    setTimeout(() => setAdminToast(null), 4000);
+                                  }
+                                }}
+                                className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition shadow flex items-center gap-1 cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Approve & Release Bonus</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (onRejectReferralWithdrawal) {
+                                    onRejectReferralWithdrawal(req.id, 'Requirements not satisfied');
+                                    setAdminToast(`Referral withdrawal request declined.`);
+                                    setTimeout(() => setAdminToast(null), 4000);
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 text-xs font-bold text-red-400 bg-red-950/60 hover:bg-red-900 border border-red-800 rounded-lg transition cursor-pointer"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-neutral-500 italic">Settled</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
-          {pendingGet.length === 0 ? (
-            <div className="py-20 text-center space-y-2">
-              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto opacity-70" />
-              <div className="text-sm font-bold text-white">No Pending Payout Claims</div>
-              <div className="text-xs text-neutral-400">All matured 20-day dividend cycles have been dispatched or matched.</div>
+          {/* Card 2: Pending Payout Claims (Get Assistance) */}
+          <div className="p-6 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+              <div>
+                <h3 className="text-xl font-bold text-white">Pending Payout Claims (Get Assistance)</h3>
+                <p className="text-xs text-neutral-400 mt-0.5">Claims submitted after 20-day maturity waiting for settlement</p>
+              </div>
+              <span className="text-xs font-bold text-amber-400 bg-amber-950/40 border border-amber-800 px-3 py-1.5 rounded-lg">
+                {pendingGet.length} Pending
+              </span>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-neutral-800 text-neutral-400 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-3">Order ID</th>
-                    <th className="py-3 px-3">Recipient Name</th>
-                    <th className="py-3 px-3">Bank Account</th>
-                    <th className="py-3 px-3">Amount</th>
-                    <th className="py-3 px-3">Status</th>
-                    <th className="py-3 px-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-900">
-                  {pendingGet.map((claim) => (
-                    <tr key={claim.id} className="hover:bg-neutral-900/30">
-                      <td className="py-3 px-3 font-mono text-neutral-300">{claim.id}</td>
-                      <td className="py-3 px-3 font-bold text-white">{claim.investorName}</td>
-                      <td className="py-3 px-3 text-neutral-300">{claim.bankDetails.bankName} - {claim.bankDetails.accountNumber}</td>
-                      <td className="py-3 px-3 font-mono font-bold text-amber-400 text-sm">₦{claim.amount.toLocaleString()}</td>
-                      <td className="py-3 px-3">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700">
-                          Waiting Match
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          onClick={() => {
-                            setActiveTab('matching');
-                            setSelectedGetId(claim.id);
-                          }}
-                          className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition"
-                        >
-                          Pair Now
-                        </button>
-                      </td>
+
+            {pendingGet.length === 0 ? (
+              <div className="py-20 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto opacity-70" />
+                <div className="text-sm font-bold text-white">No Pending Payout Claims</div>
+                <div className="text-xs text-neutral-400">All matured 20-day dividend cycles have been dispatched or matched.</div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-neutral-800 text-neutral-400 uppercase tracking-wider font-semibold">
+                      <th className="py-3 px-3">Order ID</th>
+                      <th className="py-3 px-3">Recipient Name</th>
+                      <th className="py-3 px-3">Bank Account</th>
+                      <th className="py-3 px-3">Amount</th>
+                      <th className="py-3 px-3">Status</th>
+                      <th className="py-3 px-3 text-right">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="divide-y divide-neutral-900">
+                    {pendingGet.map((claim) => (
+                      <tr key={claim.id} className="hover:bg-neutral-900/30">
+                        <td className="py-3 px-3 font-mono text-neutral-300">{claim.id}</td>
+                        <td className="py-3 px-3 font-bold text-white">{claim.investorName}</td>
+                        <td className="py-3 px-3 text-neutral-300">{claim.bankDetails.bankName} - {claim.bankDetails.accountNumber}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-amber-400 text-sm">₦{claim.amount.toLocaleString()}</td>
+                        <td className="py-3 px-3">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700">
+                            Waiting Match
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            onClick={() => {
+                              setActiveTab('matching');
+                              setSelectedGetId(claim.id);
+                            }}
+                            className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition"
+                          >
+                            Pair Now
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1459,6 +1882,114 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* ADMIN PROOF OF PAYMENT LIGHTBOX MODAL                     */}
+      {/* ======================================================== */}
+      {selectedProofPreview && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-[#0c0c0c] border border-neutral-700 shadow-2xl p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
+                <FileCheck2 className="w-5 h-5 text-emerald-400" />
+                <span>Administrative Proof Verification</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProofPreview(null)}
+                className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Proof Image or Document Card */}
+            <div className="rounded-2xl overflow-hidden border border-neutral-800 bg-black flex items-center justify-center min-h-[220px] max-h-[360px] relative">
+              {selectedProofPreview.receiptUrl ? (
+                <img
+                  src={selectedProofPreview.receiptUrl}
+                  alt="Proof Receipt"
+                  className="w-full h-full object-contain max-h-[350px]"
+                />
+              ) : (
+                <div className="text-center p-8 space-y-2">
+                  <FileText className="w-12 h-12 text-emerald-400 mx-auto" />
+                  <p className="text-sm font-bold text-white">{selectedProofPreview.receiptName || 'Payment Transfer Slip'}</p>
+                  <p className="text-xs text-neutral-400">Electronic Banking Transfer Receipt</p>
+                </div>
+              )}
+            </div>
+
+            {/* Verification Metadata */}
+            <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800 space-y-2.5 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+                <span className="text-neutral-400">Payer (Growth will start):</span>
+                <span className="font-bold text-white">{selectedProofPreview.payerName} ({selectedProofPreview.payerPhone})</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+                <span className="text-neutral-400">Demanding Recipient:</span>
+                <span className="font-bold text-white">{selectedProofPreview.recipientName} ({selectedProofPreview.bankName} - {selectedProofPreview.accountNumber})</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+                <span className="text-neutral-400">Transfer Amount:</span>
+                <span className="font-mono text-base font-black text-emerald-400">₦{(selectedProofPreview.amount || 0).toLocaleString()}</span>
+              </div>
+              {selectedProofPreview.note && (
+                <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+                  <span className="text-neutral-400">Reference / Note:</span>
+                  <span className="font-mono text-amber-300 font-bold">{selectedProofPreview.note}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center">
+                <span className="text-neutral-400">Recipient Confirmation:</span>
+                {selectedProofPreview.recipientConfirmed ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600 font-bold text-[10px] flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Recipient Confirmed Received
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600 font-bold text-[10px] flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-400" /> Recipient Confirmation Pending
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedProofPreview(null)}
+                className="px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 font-semibold transition cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onConfirmAssistanceSettlement(selectedProofPreview.orderId);
+                  setAdminToast(`Approved! ${selectedProofPreview.payerName}'s 20-day growth progress is now active and counting.`);
+                  setTimeout(() => setAdminToast(null), 4000);
+                  setSelectedProofPreview(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-lg shadow-emerald-950/60 flex items-center gap-2 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Approve Proof & Start Growth Progress</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Landing Feed Activities Modal */}
+      <UploadLandingFeedModal
+        isOpen={isUploadFeedOpen}
+        onClose={() => setIsUploadFeedOpen(false)}
+        activities={liveActivities}
+        onSaveActivities={(updated) => {
+          onUpdateLiveActivities?.(updated);
+        }}
+      />
 
     </div>
   );

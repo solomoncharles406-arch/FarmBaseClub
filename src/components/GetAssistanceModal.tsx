@@ -17,18 +17,23 @@ export const GetAssistanceModal: React.FC<GetAssistanceModalProps> = ({
   adminControls,
   onRequestAssistance,
 }) => {
-  const [claimAmount, setClaimAmount] = useState(
-    ((investor.activeAssistance * 0.25) + investor.activeAssistance).toString()
-  );
+  const [claimAmount, setClaimAmount] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   if (!isOpen) return null;
+
+  const isAssistanceCycleComplete =
+    investor.status === 'ACTIVE' &&
+    Number(investor.activeAssistance || 0) > 0 &&
+    Number(investor.dividendPercent || 0) >= 100;
+
+  const hasRenderedAssistance = Number(investor.activeAssistance || 0) > 0 || Number(investor.totalAssisted || 0) > 0;
 
   const isWithdrawalBlocked = investor.withdrawalLocked || adminControls.globalWithdrawalsLocked;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isWithdrawalBlocked) return;
+    if (!isAssistanceCycleComplete || isWithdrawalBlocked) return;
     const val = parseFloat(claimAmount);
     if (!val || val <= 0) return;
     onRequestAssistance(val);
@@ -94,13 +99,13 @@ export const GetAssistanceModal: React.FC<GetAssistanceModalProps> = ({
               <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto animate-bounce" />
               <h4 className="text-lg font-bold text-white">Assistance Claim Queued!</h4>
               <p className="text-xs text-neutral-400">
-                Your demand to "Get Assistance" for ₦{Number(claimAmount || 0).toLocaleString()} has been entered into the Admin Dispatch Queue. A matched peer investor will be assigned to pay directly into your registered bank account.
+                Your demand to Get Assistance for ₦{Number(claimAmount || 0).toLocaleString()} has been entered into the Admin Dispatch Queue. A matched peer investor will be assigned to pay directly into your registered bank account.
               </p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="p-3.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300 space-y-1">
-                <p className="font-semibold text-emerald-400">Definition: "Get Assistance"</p>
+                <p className="font-semibold text-emerald-400">Definition: Get Assistance</p>
                 <p>
                   In Farm Base Club, <strong className="text-white">Get Assistance</strong> is the terminology used to demand payment from users upon the maturity of your agricultural dividend commitment cycle.
                 </p>
@@ -130,6 +135,19 @@ export const GetAssistanceModal: React.FC<GetAssistanceModalProps> = ({
                 </div>
               </div>
 
+              {/* Pre-condition notice if user has not rendered assistance */}
+              {!hasRenderedAssistance && (
+                <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-600/70 text-xs text-amber-200 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold text-amber-300">Render Assistance Required First</p>
+                    <p className="leading-relaxed text-amber-200/90">
+                      You have not rendered any assistance yet. In Farm Base Club, newly registered members cannot demand or get assistance until they first render assistance to a farming cooperative.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Claim Amount Input */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider text-neutral-300 block">
@@ -140,33 +158,60 @@ export const GetAssistanceModal: React.FC<GetAssistanceModalProps> = ({
                   <input
                     type="number"
                     min="10000"
-                    step="10000"
-                    required
+                    step="5000"
+                    disabled={!isAssistanceCycleComplete}
                     value={claimAmount}
                     onChange={(e) => setClaimAmount(e.target.value)}
-                    className="w-full pl-8 pr-4 py-2.5 bg-black border border-neutral-800 focus:border-red-500 rounded-xl text-white text-base font-mono focus:outline-none"
-                    placeholder="Enter claim amount in Naira..."
+                    className={`w-full pl-8 pr-4 py-2.5 rounded-xl text-white text-base font-mono focus:outline-none transition ${
+                      !isAssistanceCycleComplete
+                        ? 'bg-neutral-900 border border-neutral-800 text-neutral-500 cursor-not-allowed'
+                        : 'bg-black border border-neutral-800 focus:border-emerald-500'
+                    }`}
+                    placeholder={isAssistanceCycleComplete ? 'Enter claim amount in Naira...' : 'Assistance cycle must complete (20/20 days)...'}
                   />
                 </div>
-                <p className="text-[11px] text-neutral-400">
-                  Available harvest maturity balance: ₦{(investor.activeAssistance * 1.25).toLocaleString()}
-                </p>
+                {isAssistanceCycleComplete ? (
+                  <p className="text-[11px] text-emerald-400 font-semibold">
+                    ✓ 20-Day Agricultural Cycle Complete! Available maturity balance: ₦{(investor.activeAssistance * 1.20).toLocaleString()}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-amber-400/90 font-medium">
+                    {Number(investor.activeAssistance || 0) === 0
+                      ? 'No active assistance rendered yet. Render assistance first to begin your 20-day cycle.'
+                      : investor.status === 'PENDING'
+                      ? 'Payment proof submitted. Awaiting Admin Approval to start growth cycle.'
+                      : `20-Day cycle in progress (${Math.round(((investor.dividendPercent || 0) / 100) * 20)}/20 Days · ${investor.dividendPercent}%). Demanding payment unlocks at 100% maturity.`}
+                  </p>
+                )}
               </div>
 
-              {investor.dividendPercent < 100 && (
-                <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-800/40 text-xs text-amber-300 flex items-start gap-2">
+              {!isAssistanceCycleComplete && (
+                <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/60 text-xs text-amber-200 flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <span>
-                    Your current harvest commitment progress is at {investor.dividendPercent}%. Payouts initiated before 100% maturity will distribute accumulated partial dividends.
-                  </span>
+                  <div className="space-y-1">
+                    <div className="font-bold text-amber-300">Get Assistance is Inactive: Cycle Incomplete</div>
+                    <p className="text-neutral-300 text-[11px] leading-relaxed">
+                      Farm Base Club rules require your assistance cycle to run the full 20 days (reaching 100% maturity) before initiating a payment demand.
+                    </p>
+                  </div>
                 </div>
               )}
 
               <button
                 type="submit"
-                className="w-full py-3 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2"
+                disabled={!isAssistanceCycleComplete || !claimAmount.trim() || parseFloat(claimAmount) <= 0 || isWithdrawalBlocked}
+                className={`w-full py-3.5 text-sm font-bold rounded-xl transition shadow-lg flex items-center justify-center gap-2 ${
+                  !isAssistanceCycleComplete || !claimAmount.trim() || parseFloat(claimAmount) <= 0 || isWithdrawalBlocked
+                    ? 'bg-neutral-900 text-neutral-500 border border-neutral-800 cursor-not-allowed opacity-80'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50 cursor-pointer'
+                }`}
               >
-                Submit Demand & Get Assistance <ArrowRight className="w-4 h-4" />
+                <span>
+                  {!isAssistanceCycleComplete
+                    ? `Get Assistance Inactive (${Math.round(((investor.dividendPercent || 0) / 100) * 20)}/20 Days)`
+                    : 'Submit Demand & Get Assistance'}
+                </span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </form>
           )}

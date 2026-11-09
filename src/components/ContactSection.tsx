@@ -42,7 +42,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ onSendMessage })
           We're Here to Support Your Agricultural Sponsorship.
         </h1>
         <p className="text-base sm:text-lg text-neutral-300 leading-relaxed">
-          Have questions regarding "Render Assistance" or "Get Assistance", cooperative verification, or payout schedules? Reach our central support and cooperative liaison desk 24/7.
+          Have questions regarding Render Assistance or Get Assistance, cooperative verification, or payout schedules? Reach our central support and cooperative liaison desk 24/7.
         </p>
       </section>
 

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import heroBanner from '../assets/images/farm_hero_banner_1792792455809.jpg';
 import { Logo } from './Logo';
-import { LiveAssistanceTicker } from './LiveAssistanceTicker';
 import { LiveAssistanceActivity } from '../types';
 import {
   ArrowRight,
@@ -12,21 +11,18 @@ import {
 } from 'lucide-react';
 
 interface HomeSectionProps {
-  activities: LiveAssistanceActivity[];
+  activities?: LiveAssistanceActivity[];
   onOpenRegister: () => void;
+  onOpenLogin: () => void;
   onGoToDashboard: () => void;
-  onOpenRenderAssistance: () => void;
-  onOpenGetAssistance: () => void;
+  onOpenRenderAssistance?: () => void;
+  onOpenGetAssistance?: () => void;
 }
 
 export const HomeSection: React.FC<HomeSectionProps> = ({
-  activities,
   onOpenRegister,
-  onGoToDashboard,
-  onOpenRenderAssistance,
-  onOpenGetAssistance,
+  onOpenLogin,
 }) => {
-  const [calcAmount, setCalcAmount] = useState(100000);
   const [openFaqs, setOpenFaqs] = useState<number[]>([0, 1]);
 
   const toggleFaq = (index: number) => {
@@ -34,9 +30,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
       prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
     );
   };
-
-  const calculatedDividend = calcAmount * 0.20;
-  const calculatedTotal = calcAmount + calculatedDividend;
 
   return (
     <div className="space-y-16 py-6 pb-20">
@@ -90,7 +83,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             </button>
 
             <button
-              onClick={onGoToDashboard}
+              onClick={onOpenLogin}
               className="w-full sm:w-auto px-8 py-4 text-base font-bold text-neutral-100 hover:text-white bg-[#2b0c12]/80 hover:bg-[#3d111a] border border-red-800/70 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
             >
               <LogIn className="w-5 h-5 text-red-400" />
@@ -128,17 +121,8 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
         </div>
       </section>
 
-      {/* Movable Horizontal Names of Newly Rendered Assistance with Amount & People that Got Assistance (Below Hero Section) */}
-      <section className="space-y-3">
-        <LiveAssistanceTicker
-          activities={activities}
-          onOpenRenderAssistance={onOpenRenderAssistance}
-          onOpenGetAssistance={onOpenGetAssistance}
-          variant="embedded"
-        />
-      </section>
-
-      {/* The Two Pillars: Render Assistance vs Get Assistance Action Hub */}
+      {/* Frequently Asked Questions (FAQ) */}
+      {/* Mutual Peer-Assistance Mechanism */}
       <section className="space-y-6">
         <div className="text-center max-w-2xl mx-auto space-y-2">
           <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest">
@@ -158,7 +142,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
           <div className="p-6 sm:p-8 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-5 flex flex-col justify-between">
             <div>
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                "Render Assistance"
+                Render Assistance
               </h3>
               <span className="text-xs font-semibold text-emerald-400 px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 inline-block mt-1">
                 Offering To Pay
@@ -166,8 +150,10 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             </div>
 
             <button
-              onClick={onOpenRenderAssistance}
-              className="w-full py-3.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2"
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="w-full py-3.5 text-sm font-bold text-white bg-emerald-600 rounded-xl shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 opacity-95 cursor-default select-none pointer-events-none"
             >
               <span>Offer to Render Assistance</span>
             </button>
@@ -177,7 +163,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
           <div className="p-6 sm:p-8 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-5 flex flex-col justify-between">
             <div>
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                "Get Assistance"
+                Get Assistance
               </h3>
               <span className="text-xs font-semibold text-neutral-300 px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 inline-block mt-1">
                 Demanding Payment
@@ -185,8 +171,10 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             </div>
 
             <button
-              onClick={onOpenGetAssistance}
-              className="w-full py-3.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2"
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="w-full py-3.5 text-sm font-bold text-white bg-emerald-600 rounded-xl shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 opacity-95 cursor-default select-none pointer-events-none"
             >
               <span>Demand Payment (Get Assistance)</span>
             </button>
@@ -220,7 +208,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             >
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                  What is "Render Assistance" (Offering To Pay)?
+                  What is Render Assistance (Offering To Pay)?
                 </h3>
                 <span className="text-[11px] font-semibold text-emerald-400">
                   Peer Sponsorship Phase
@@ -253,14 +241,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                     <span>Activates your 20-day dividend commitment cycle (up to 20%).</span>
                   </li>
                 </ul>
-                <div className="pt-1">
-                  <button
-                    onClick={onOpenRenderAssistance}
-                    className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-md flex items-center gap-2"
-                  >
-                    <span>Offer to Render Assistance</span>
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -273,7 +253,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             >
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                  What is "Get Assistance" (Demanding Payment)?
+                  What is Get Assistance (Demanding Payment)?
                 </h3>
                 <span className="text-[11px] font-semibold text-neutral-400">
                   Harvest Yield Payout Phase
@@ -306,14 +286,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                     <span>Matched peers must pay within 24 hours.</span>
                   </li>
                 </ul>
-                <div className="pt-1">
-                  <button
-                    onClick={onOpenGetAssistance}
-                    className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-md flex items-center gap-2"
-                  >
-                    <span>Demand Payment (Get Assistance)</span>
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -378,93 +350,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                 </p>
               </div>
             )}
-          </div>
-
-        </div>
-      </section>
-
-      {/* Interactive Dividend Calculator */}
-      <section className="p-8 rounded-3xl bg-neutral-950 border border-neutral-800 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-neutral-800">
-          <div>
-            <div className="text-xs font-bold text-emerald-400 uppercase tracking-widest">
-              Agricultural Yield Simulator
-            </div>
-            <h3 className="text-2xl font-bold text-white mt-1">
-              Calculate Your 20-Day Dividend Yield
-            </h3>
-          </div>
-          <p className="text-xs text-neutral-400 max-w-sm">
-            Provide assistance to mechanized clusters and receive up to 20% dividend progress yield paid out after 20 days.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
-          
-          <div className="lg:col-span-2 space-y-5">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-semibold text-neutral-300">Assistance Amount:</span>
-              <span className="text-2xl font-black text-white font-mono-nums">₦{calcAmount.toLocaleString()}</span>
-            </div>
-
-            <input
-              type="range"
-              min="10000"
-              max="5000000"
-              step="5000"
-              value={calcAmount}
-              onChange={(e) => setCalcAmount(Number(e.target.value))}
-              className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-            />
-
-            <div className="flex justify-between text-xs text-neutral-500 font-mono-nums">
-              <span>₦10,000 Min</span>
-              <span>₦1,000,000</span>
-              <span>₦2,500,000</span>
-              <span>₦5,000,000 Max</span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 pt-2">
-              {[10000, 50000, 100000].map((val) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setCalcAmount(val)}
-                  className={`py-2 text-xs font-bold rounded-lg border transition ${
-                    calcAmount === val
-                      ? 'bg-emerald-600 text-white border-emerald-500'
-                      : 'bg-black text-neutral-400 border-neutral-800 hover:border-emerald-600'
-                  }`}
-                >
-                  Quick: ₦{val.toLocaleString()}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Result card */}
-          <div className="p-6 rounded-2xl bg-black border border-neutral-800 space-y-4">
-            <div className="space-y-1">
-              <span className="text-xs text-neutral-400 uppercase font-semibold">Projected Harvest Yield</span>
-              <div className="text-3xl font-black text-emerald-400 font-mono-nums">
-                +₦{calculatedDividend.toLocaleString()}
-              </div>
-              <span className="text-[11px] text-neutral-400 block">Up to 20% dividend on 20-day harvest cycle</span>
-            </div>
-
-            <div className="pt-3 border-t border-neutral-800 flex justify-between items-center">
-              <span className="text-xs text-neutral-300">Total Withdrawal:</span>
-              <span className="text-xl font-bold text-white font-mono-nums">
-                ₦{calculatedTotal.toLocaleString()}
-              </span>
-            </div>
-
-            <button
-              onClick={onGoToDashboard}
-              className="w-full py-3 text-xs font-bold uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition shadow-md"
-            >
-              Lock In This Assistance
-            </button>
           </div>
 
         </div>

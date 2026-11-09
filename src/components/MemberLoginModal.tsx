@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { LogIn, Mail, Phone, Lock, Eye, EyeOff, X, User, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LogIn, Lock, Eye, EyeOff, X, User, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Investor } from '../types';
+
+import { normalizeEmail, normalizePhoneDigits } from '../utils/registrationValidation';
 
 interface MemberLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   investors: Investor[];
-  currentInvestor: Investor;
   onSelectInvestor: (investor: Investor) => void;
   onGoToDashboard: () => void;
   onOpenRegister: () => void;
@@ -16,16 +17,40 @@ export const MemberLoginModal: React.FC<MemberLoginModalProps> = ({
   isOpen,
   onClose,
   investors,
-  currentInvestor,
   onSelectInvestor,
   onGoToDashboard,
   onOpenRegister,
 }) => {
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('farmbase_remember_user') === 'true';
+  });
+  const [identifier, setIdentifier] = useState(() => {
+    const isRemembered = localStorage.getItem('farmbase_remember_user') === 'true';
+    return isRemembered ? (localStorage.getItem('farmbase_remember_email') || '') : '';
+  });
+  const [password, setPassword] = useState(() => {
+    const isRemembered = localStorage.getItem('farmbase_remember_user') === 'true';
+    return isRemembered ? (localStorage.getItem('farmbase_remember_password') || '') : '';
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      const isRemembered = localStorage.getItem('farmbase_remember_user') === 'true';
+      setRememberMe(isRemembered);
+      if (isRemembered) {
+        setIdentifier(localStorage.getItem('farmbase_remember_email') || '');
+        setPassword(localStorage.getItem('farmbase_remember_password') || '');
+      } else {
+        setIdentifier('');
+        setPassword('');
+      }
+      setErrorMsg('');
+      setSuccessMsg('');
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -37,41 +62,83 @@ export const MemberLoginModal: React.FC<MemberLoginModalProps> = ({
     const cleanId = identifier.trim().toLowerCase();
 
     if (!cleanId) {
-      // If empty, log in as current investor directly
-      onGoToDashboard();
-      onClose();
+      setErrorMsg('Please enter your Email Address or Phone Number.');
       return;
     }
 
-    // Try to match by email, phone, referral code, or full name
-    const found = investors.find(
-      (inv) =>
-        inv.email.toLowerCase() === cleanId ||
-        inv.phone.replace(/\D/g, '').includes(cleanId.replace(/\D/g, '')) ||
-        inv.referralCode.toLowerCase() === cleanId ||
-        inv.fullName.toLowerCase().includes(cleanId)
-    );
-
-    if (found) {
-      onSelectInvestor(found);
-      setSuccessMsg(`Welcome back, ${found.fullName}!`);
-      setTimeout(() => {
-        onGoToDashboard();
-        onClose();
-      }, 500);
-    } else {
-      // If not strictly matched, still authenticate with current investor or first investor
-      setErrorMsg('Account not found with provided credentials. Please check your email or phone, or select an active account below.');
+    if (!password) {
+      setErrorMsg('Please enter your account password.');
+      return;
     }
-  };
 
-  const handleQuickLogin = (inv: Investor) => {
-    onSelectInvestor(inv);
-    setSuccessMsg(`Logged in as ${inv.fullName}`);
+    const cleanIdPhone = normalizePhoneDigits(cleanId);
+    const matchesUser = (inv: Investor) => {
+      if (normalizeEmail(inv.email) === cleanId) return true;
+      if (inv.referralCode?.toLowerCase() === cleanId) return true;
+      if (cleanIdPhone && cleanIdPhone.length >= 7) {
+        const invPhone = normalizePhoneDigits(inv.phone);
+        if (invPhone && invPhone === cleanIdPhone) return true;
+      }
+      return false;
+    };
+
+    // Match by email, normalized phone, or referral code from props or cached registered accounts
+    let found = investors.find(matchesUser);
+
+    // Fallback: Check local storage for newly registered users if props haven't synced
+    if (!found) {
+      try {
+        const cached = localStorage.getItem('farmbase_all_investors');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            found = parsed.find(matchesUser);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed reading cached investors in login modal:', err);
+      }
+    }
+
+    if (!found) {
+      setErrorMsg('No registered account found with these credentials. Please check your details or create a new account.');
+      return;
+    }
+
+    // Verify password if set on the account or in the account password map
+    const storedPassword = found.password || (() => {
+      try {
+        const pwdMap = JSON.parse(localStorage.getItem('farmbase_account_passwords') || '{}');
+        return pwdMap[found.email.toLowerCase()] || pwdMap[found.phone.replace(/\D/g, '')] || pwdMap[found.referralCode.toLowerCase()];
+      } catch {
+        return undefined;
+      }
+    })();
+
+    if (storedPassword && storedPassword !== password) {
+      setErrorMsg('Incorrect password. Please try again.');
+      return;
+    }
+
+    // Save or clear remember me in localStorage (remembers email, password, and member account)
+    if (rememberMe) {
+      localStorage.setItem('farmbase_remember_user', 'true');
+      localStorage.setItem('farmbase_remember_email', identifier.trim());
+      localStorage.setItem('farmbase_remember_password', password);
+      localStorage.setItem('farmbase_remembered_investor_id', found.id);
+    } else {
+      localStorage.removeItem('farmbase_remember_user');
+      localStorage.removeItem('farmbase_remember_email');
+      localStorage.removeItem('farmbase_remember_password');
+      localStorage.removeItem('farmbase_remembered_investor_id');
+    }
+
+    onSelectInvestor(found);
+    setSuccessMsg(`Welcome back, ${found.fullName}!`);
     setTimeout(() => {
       onGoToDashboard();
       onClose();
-    }, 400);
+    }, 450);
   };
 
   return (
@@ -109,24 +176,25 @@ export const MemberLoginModal: React.FC<MemberLoginModalProps> = ({
                 <CheckCircle2 className="w-6 h-6 animate-pulse" />
               </div>
               <p className="text-base font-bold text-white">{successMsg}</p>
-              <p className="text-xs text-emerald-400">Redirecting to your dashboard...</p>
+              <p className="text-xs text-emerald-400">Opening your dashboard...</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                  Email, Phone Number, or Referral Code
+                  Email Address or Phone Number
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 w-4 h-4 text-neutral-500" />
                   <input
                     type="text"
+                    required
                     value={identifier}
                     onChange={(e) => {
                       setIdentifier(e.target.value);
                       setErrorMsg('');
                     }}
-                    placeholder="e.g. musa@farmbase.ng or 08031234567"
+                    placeholder="e.g. investor@gmail.com or 08031234567"
                     className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500 transition"
                   />
                 </div>
@@ -135,17 +203,20 @@ export const MemberLoginModal: React.FC<MemberLoginModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-neutral-300">
-                    Password / Member PIN
+                    Account Password
                   </label>
-                  <span className="text-[11px] text-neutral-500">Optional for demo</span>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 w-4 h-4 text-neutral-500" />
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password or PIN"
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setErrorMsg('');
+                    }}
+                    placeholder="Enter your account password"
                     className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-9 pr-10 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500 transition"
                   />
                   <button
@@ -156,6 +227,20 @@ export const MemberLoginModal: React.FC<MemberLoginModalProps> = ({
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+              </div>
+
+              {/* Remember Me Checkbox */}
+              <div className="flex items-center justify-between text-xs pt-0.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-neutral-300 hover:text-white">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-neutral-700 bg-neutral-900 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                  />
+                  <span className="font-medium">Remember me</span>
+                </label>
+                <span className="text-[11px] text-neutral-500">Encrypted P2P Session</span>
               </div>
 
               {errorMsg && (
@@ -172,42 +257,6 @@ export const MemberLoginModal: React.FC<MemberLoginModalProps> = ({
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
-          )}
-
-          {/* Quick 1-Click Demo Profiles */}
-          {!successMsg && (
-            <div className="pt-3 border-t border-neutral-800/80">
-              <p className="text-[11px] font-semibold text-neutral-400 mb-2">
-                Or Quick Switch / Log in as Active Member:
-              </p>
-              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                {investors.slice(0, 3).map((inv) => (
-                  <button
-                    key={inv.id}
-                    type="button"
-                    onClick={() => handleQuickLogin(inv)}
-                    className={`w-full flex items-center justify-between p-2 rounded-xl text-left text-xs transition cursor-pointer border ${
-                      currentInvestor.id === inv.id
-                        ? 'bg-emerald-950/40 border-emerald-500/50 text-white'
-                        : 'bg-neutral-900/60 hover:bg-neutral-850 border-neutral-800 text-neutral-300 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-6 h-6 rounded-full bg-emerald-600/30 text-emerald-400 flex items-center justify-center font-bold text-[10px] shrink-0">
-                        {inv.fullName.charAt(0)}
-                      </div>
-                      <div className="truncate">
-                        <span className="font-semibold block truncate">{inv.fullName}</span>
-                        <span className="text-[10px] text-neutral-400">{inv.phone}</span>
-                      </div>
-                    </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-emerald-400 shrink-0 font-mono">
-                      ₦{inv.activeAssistance.toLocaleString()}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
           )}
 
           {/* Footer Navigation */}
